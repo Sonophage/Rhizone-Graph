@@ -313,7 +313,7 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-rel-base.rg-ghost { opacity: 0.25; stroke-dasharray: 2 4; }
 .rg-rel-pulse.rg-ghost { opacity: 0.4; }
 .rg-ghost-dot { fill: var(--text-normal, #ffffff); stroke: none; }
-.rg-ghost-label { font-size: 14px; fill: var(--text-normal, #ffffff); font-style: italic; paint-order: stroke; stroke: var(--background-primary, #0d0d0d); stroke-width: 3px; }
+.rg-ghost-label { font-size: 14px; fill: var(--text-normal, #ffffff); font-style: italic; }
 .rg-ghost-zone { fill: var(--rg-muted); }
 .rg-box-ghost .rg-box-title { color: var(--rg-muted); }
 .rg-ghost-row .rg-glyph, .rg-ghost-row .rg-box-name { color: var(--rg-muted); font-style: italic; }

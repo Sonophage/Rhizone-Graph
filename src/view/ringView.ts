@@ -62,7 +62,7 @@ export class ReticularView extends ItemView {
   private showAll = false;
   private pinned = false; // when pinned, ignore active-note changes
   private showControls = false;
-  private hidden = new Set<NodeState>(); // legend filters: hide these states
+  private hidden = new Set<NodeState | "ghost">(); // legend filters: hide these states (incl. "ghost")
   private vt = { z: 1, tx: 0, ty: 0 }; // pan/zoom transform state
   private _pan: SVGElement | null = null;
   private _svg: SVGElement | null = null;
@@ -374,6 +374,20 @@ export class ReticularView extends ItemView {
     });
     this._spot = { nodeEls, spokeEls, edgeEls, adj };
 
+    // ── ghost notes: phantom wikilinks dropped into the emptiest angular gaps (capped) ──
+    if (!this.hidden.has("ghost") && ghosts.length) {
+      const occupied = placed.map((p) => norm(p.ang)).sort((a, b) => a - b);
+      const gr = R_OUT + 14; // just outside the outer ring
+      const slots = largestGaps(occupied, Math.min(ghosts.length, 12));
+      ghosts.slice(0, slots.length).forEach((g, i) => {
+        const ang = slots[i];
+        const x = cx + Math.cos(ang) * gr;
+        const y = cy + Math.sin(ang) * gr;
+        signalLine(pan, cx, cy, x, y, "rg-rel", "rg-ghost"); // tether to the focus that mentions it
+        this.drawGhost(pan, g, x, y, ang);
+      });
+    }
+
     // ── focus core + reticularity score (★) — rarity-weighted richness of this note's own web ──
     const scored = [...web.inner, ...web.outer];
     const retRaw = scored.reduce(
@@ -442,6 +456,21 @@ export class ReticularView extends ItemView {
           this.fadeHiddenEdges(s); // also fade the inter-node edges touching those nodes
         } else this.render();
       });
+    });
+    // ghost notes — same affordance as the state filters; toggles ghost nodes in the graph
+    const ghostItem = legend.createSpan({
+      cls: "rg-legend-item rg-ghost" + (this.hidden.has("ghost") ? " is-hidden" : ""),
+      attr: { role: "button", "aria-label": "Toggle ghost notes in the graph" }
+    });
+    ghostItem.createSpan({ cls: "rg-glyph", text: "◌" });
+    ghostItem.createSpan({ text: " ghost" });
+    ghostItem.onClickEvent(() => {
+      const hiding = !this.hidden.has("ghost");
+      if (hiding) this.hidden.add("ghost");
+      else this.hidden.delete("ghost");
+      ghostItem.toggleClass("is-hidden", hiding);
+      if (hiding) this.fadeOut(".rg-ghost-node, .rg-rel-base.rg-ghost, .rg-rel-pulse.rg-ghost");
+      else this.render(); // re-spread into the emptiest gaps
     });
     if (this._hiddenCount > 0 && !this.showAll) {
       const more = legend.createSpan({ cls: "rg-more", text: `show +${this._hiddenCount}` });
@@ -860,6 +889,21 @@ export class ReticularView extends ItemView {
     }
   }
 
+  /** A ghost note — a phantom (uncreated) wikilink. Faint, non-traversable; shows its reach. */
+  private drawGhost(svg: SVGElement, g: PhantomFacet, x: number, y: number, ang: number): void {
+    const grp = svg.createSvg("g", {
+      cls: "rg-ghost-node",
+      attr: { "aria-label": `${g.label} — phantom, mentioned by ${g.shared} note(s)` }
+    });
+    grp.createSvg("path", { cls: "rg-ghost-dot", attr: { d: triangle(x, y, 6) } });
+    const ox = Math.cos(ang);
+    const oy = Math.sin(ang);
+    const anchor = ox > 0.25 ? "start" : ox < -0.25 ? "end" : "middle";
+    grp
+      .createSvg("text", { cls: "rg-ghost-label", attr: { x: x + ox * 12, y: y + oy * 12 + 4, "text-anchor": anchor } })
+      .setText(clip(g.label, 12));
+  }
+
   /** Obsidian's native page-preview popover near `el` (needs core Page Preview enabled). */
   private hoverLink(ev: MouseEvent, el: HTMLElement, basename: string): void {
     this.host.app.workspace.trigger("hover-link", {
@@ -969,6 +1013,43 @@ function baseOf(path: string): string {
 }
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/** Normalize an angle to [0, 2π). */
+function norm(a: number): number {
+  const t = a % (2 * Math.PI);
+  return t < 0 ? t + 2 * Math.PI : t;
+}
+
+/**
+ * Pick `k` angles that fall in the emptiest parts of the circle, given the `sorted` occupied
+ * angles. Greedy: repeatedly split the widest remaining arc at its midpoint. PURE.
+ */
+function largestGaps(sorted: number[], k: number): number[] {
+  if (k <= 0) return [];
+  if (sorted.length === 0) return Array.from({ length: k }, (_, i) => -Math.PI / 2 + (i / k) * Math.PI * 2);
+  const arcs: Array<{ a: number; b: number }> = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const next = i + 1 === sorted.length ? sorted[0] + 2 * Math.PI : sorted[i + 1];
+    arcs.push({ a: sorted[i], b: next });
+  }
+  const out: number[] = [];
+  for (let n = 0; n < k; n++) {
+    let wi = 0;
+    let w = -1;
+    for (let i = 0; i < arcs.length; i++) {
+      const d = arcs[i].b - arcs[i].a;
+      if (d > w) {
+        w = d;
+        wi = i;
+      }
+    }
+    const arc = arcs[wi];
+    const mid = (arc.a + arc.b) / 2;
+    out.push(norm(mid));
+    arcs.splice(wi, 1, { a: arc.a, b: mid }, { a: mid, b: arc.b });
+  }
+  return out;
 }
 
 /** Strip frontmatter + code/image/comment noise so the context excerpt reads as plain text. */

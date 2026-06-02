@@ -702,21 +702,6 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   margin-top: 6px;
 }
 
-/* hover-driven note preview at the bottom of the companion */
-.rg-note-livepreview {
-  margin-top: 10px;
-  border-top: 1px solid var(--background-modifier-border);
-  padding-top: 8px;
-  min-height: 3em;
-}
-.rg-note-livepreview-label {
-  font-size: 0.7em;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
 /* editable properties — inherit the theme's native form styling */
 .rg-note-props { margin: 6px 0 12px; }
 .rg-note-props > summary { cursor: pointer; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.74em; }

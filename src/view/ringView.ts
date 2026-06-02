@@ -55,8 +55,16 @@ export interface ScopeHost {
   jumpScope(path: string): void;
   /** Companion → galaxy: re-render after an external change (e.g. forge). */
   refreshScope(): void;
-  /** Open (or reveal) the companion Note panel. */
+  /** Toggle the companion Note panel (open if closed, dismiss if open). */
   openCompanion(): void;
+  /** Spotlight a note's node in any open Scope graph (companion-row hover → graph). */
+  spotlightScope(path: string, on: boolean): void;
+  /** Node fan-spread (0..100): how far apart nodes sit within a sector (persisted). */
+  spread(): number;
+  setSpread(value: number): void;
+  /** Dock the rendered note body at the bottom of the Scope (persisted). */
+  showScopeNote(): boolean;
+  setShowScopeNote(on: boolean): void;
   /** Temporary diagnostic: index size + focus facet count. */
   debug(focusPath: string): { notes: number; focusFacets: number; focusFound: boolean };
   /** Component to parent rendered-markdown children to (for cleanup). */
@@ -86,6 +94,7 @@ export class ReticularView extends ItemView {
   private _scoreRaf = 0;
   private _hoverTimer = 0; // debounce for hover → companion inspect
   private _previewChild: Component | null = null; // per-render owner for the docked note body
+  private noteExpanded = false; // docked note enlarged to see more
 
   constructor(leaf: WorkspaceLeaf, host: ScopeHost) {
     super(leaf);
@@ -306,10 +315,11 @@ export class ReticularView extends ItemView {
         placed.push({ c, x: cx + Math.cos(ang) * r, y: cy + Math.sin(ang) * r, ang });
       });
     };
-    sector(zOut, -Math.PI / 2, 0.52); // up
-    sector(zIn, Math.PI / 2, 0.52); // down
-    sector(zCand, Math.PI, 0.72); // left — the busy list gets the open side + a wider fan
-    sector(zMut, 0, 0.46); // right — mutual (usually the smallest set) takes the narrower side
+    const sf = 0.5 + this.host.spread() / 100; // 0..100 → 0.5..1.5 fan-spread factor
+    sector(zOut, -Math.PI / 2, 0.52 * sf); // up
+    sector(zIn, Math.PI / 2, 0.52 * sf); // down
+    sector(zCand, Math.PI, 0.72 * sf); // left — the busy list gets the open side + a wider fan
+    sector(zMut, 0, 0.46 * sf); // right — mutual (usually the smallest set) takes the narrower side
 
     // per-axis count badges near the centre + faint sector labels at the rim
     const axisText = (cls: string, label: string, cardinal: number, rad: number, dy = 0): void => {
@@ -492,14 +502,29 @@ export class ReticularView extends ItemView {
     this.renderReadout(readout, null);
     this._readoutEl = readout;
 
-    // ── docked note body at the bottom (moved here from the companion) ──
-    const noteDock = root.createEl("details", { cls: "rg-scope-note" });
-    noteDock.open = true;
-    noteDock.createEl("summary", { text: `Note · ${baseOf(this.focusPath)}` });
-    const previewChild = new Component();
-    this.addChild(previewChild);
-    this._previewChild = previewChild;
-    void renderPreview(this.host, this.focusPath, noteDock, previewChild);
+    // ── docked note body at the bottom (toggle via the gear; ⤢ in the summary expands it) ──
+    if (this.host.showScopeNote()) {
+      const noteDock = root.createEl("details", { cls: "rg-scope-note" + (this.noteExpanded ? " rg-lg" : "") });
+      noteDock.open = true;
+      const sum = noteDock.createEl("summary");
+      sum.createSpan({ cls: "rg-scope-note-label", text: `Note · ${baseOf(this.focusPath)}` });
+      const exp = sum.createSpan({
+        cls: "rg-scope-note-exp",
+        text: this.noteExpanded ? "⤡" : "⤢",
+        attr: { role: "button", "aria-label": "Expand or shrink the note" }
+      });
+      exp.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // don't collapse the <details>
+        this.noteExpanded = !this.noteExpanded;
+        noteDock.toggleClass("rg-lg", this.noteExpanded);
+        exp.setText(this.noteExpanded ? "⤡" : "⤢");
+      });
+      const previewChild = new Component();
+      this.addChild(previewChild);
+      this._previewChild = previewChild;
+      void renderPreview(this.host, this.focusPath, noteDock, previewChild);
+    }
 
     if (this.showControls) this.renderControls(root);
     } catch (e) {
@@ -593,6 +618,27 @@ export class ReticularView extends ItemView {
       this.host.setPhantom(phBox.checked);
       this.refresh(); // re-render so the companion's phantom section appears/disappears
     });
+    const noteRow = panel.createDiv({ cls: "rg-control-row" });
+    const noteBox = noteRow.createEl("input", { cls: "rg-toggle", attr: { type: "checkbox" } });
+    noteBox.checked = this.host.showScopeNote();
+    noteRow.createSpan({ cls: "rg-control-label", text: "Note at bottom" });
+    noteBox.addEventListener("change", () => {
+      this.host.setShowScopeNote(noteBox.checked);
+      this.render();
+    });
+
+    const spreadRow = panel.createDiv({ cls: "rg-control-row" });
+    spreadRow.createSpan({ cls: "rg-control-label", text: "Node spread" });
+    const spreadInput = spreadRow.createEl("input", {
+      cls: "rg-slider",
+      attr: { type: "range", min: "0", max: "100", value: String(this.host.spread()) }
+    });
+    // re-render on release (not during drag) so the slider element isn't rebuilt mid-drag
+    spreadInput.addEventListener("change", () => {
+      this.host.setSpread(Number(spreadInput.value));
+      this.render();
+    });
+
     const reset = panel.createDiv({ cls: "rg-control-row" });
     const btn = reset.createSpan({ cls: "rg-reset-view", text: "reset view", attr: { role: "button" } });
     btn.onClickEvent(() => {
@@ -745,6 +791,11 @@ export class ReticularView extends ItemView {
     window.clearTimeout(this._hoverTimer);
     this.host.app.workspace.openLinkText(c.basename, this.focusPath); // open in the editor
     this.traverseTo(c.path); // re-centre the scope here (re-renders + syncs the companion)
+  }
+
+  /** Public spotlight entry — companion-row hover lights the matching node in the graph. */
+  spotlight(path: string, on: boolean): void {
+    this.highlight(path, on);
   }
 
   /** Spotlight: dim the whole graph except `path`, the focus core, and the connections `path` has. */

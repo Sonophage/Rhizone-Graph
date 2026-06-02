@@ -160,6 +160,11 @@ export class ReticularNoteView extends ItemView {
       name.onClickEvent(() => {
         if (!c.dangling) this.host.focusScope(c.path);
       });
+      // hover a row → spotlight that node in the Scope graph (restores the old box↔graph link)
+      if (!c.dangling && c.path) {
+        row.addEventListener("mouseenter", () => this.host.spotlightScope(c.path, true));
+        row.addEventListener("mouseleave", () => this.host.spotlightScope(c.path, false));
+      }
       if (c.shared.length) {
         const why = row.createSpan({ cls: "rg-note-why" });
         why.createSpan({ cls: "rg-note-why-label", text: "WHY " });

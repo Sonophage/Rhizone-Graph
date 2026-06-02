@@ -12,17 +12,23 @@ import { RhizoneFacetView, RHIZONE_FACET_VIEW_TYPE, type RhizoneHost } from "./s
 interface RGSettings {
   /** per-state label zoom thresholds, 0 (always) .. 100 (only when fully zoomed in) */
   labelZoom: { connected: number; mentioned: number; candidate: number };
-  /** show node names inside the radar (the boxes always list them regardless) */
+  /** show node names inside the radar */
   graphLabels: boolean;
   showPhantom: boolean;
   /** run the radar's motion (pulses, twinkle, entrance, sweep) — overrides the OS reduce-motion gate */
   animations: boolean;
+  /** node fan-spread within a sector, 0 (tight) .. 100 (wide); 50 = default */
+  spread: number;
+  /** dock the rendered note body at the bottom of the Scope */
+  showScopeNote: boolean;
 }
 const DEFAULT_SETTINGS: RGSettings = {
   labelZoom: { connected: 0, mentioned: 10, candidate: 50 },
   graphLabels: true,
   animations: true,
-  showPhantom: false
+  showPhantom: false,
+  spread: 50,
+  showScopeNote: true
 };
 
 export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, RhizoneHost {
@@ -52,7 +58,9 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       labelZoom: { ...DEFAULT_SETTINGS.labelZoom, ...(saved?.labelZoom ?? {}) },
       graphLabels: saved?.graphLabels ?? DEFAULT_SETTINGS.graphLabels,
       animations: saved?.animations ?? DEFAULT_SETTINGS.animations,
-      showPhantom: saved?.showPhantom ?? DEFAULT_SETTINGS.showPhantom
+      showPhantom: saved?.showPhantom ?? DEFAULT_SETTINGS.showPhantom,
+      spread: saved?.spread ?? DEFAULT_SETTINGS.spread,
+      showScopeNote: saved?.showScopeNote ?? DEFAULT_SETTINGS.showScopeNote
     };
 
     this.registerView(RETICULAR_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularView(leaf, this));
@@ -244,9 +252,35 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     for (const v of this.getScopeViews()) v.refresh();
   }
 
-  /** Open (or reveal) the companion Note panel, seeded with the Scope's current focus. */
+  /** Toggle the companion Note panel — dismiss it if open, else open it seeded with the focus. */
   openCompanion(): void {
+    const leaves = this.app.workspace.getLeavesOfType(RETICULAR_NOTE_VIEW_TYPE);
+    if (leaves.length) {
+      leaves.forEach((l) => l.detach());
+      return;
+    }
     void this.openNotePanel();
+  }
+
+  /** Spotlight a note's node in every open Scope graph (companion-row hover → graph). */
+  spotlightScope(path: string, on: boolean): void {
+    for (const v of this.getScopeViews()) v.spotlight(path, on);
+  }
+
+  spread(): number {
+    return this._settings.spread;
+  }
+  setSpread(value: number): void {
+    this._settings.spread = value;
+    void this.saveData(this._settings);
+  }
+
+  showScopeNote(): boolean {
+    return this._settings.showScopeNote;
+  }
+  setShowScopeNote(on: boolean): void {
+    this._settings.showScopeNote = on;
+    void this.saveData(this._settings);
   }
 
   debug(focusPath: string): { notes: number; focusFacets: number; focusFound: boolean } {

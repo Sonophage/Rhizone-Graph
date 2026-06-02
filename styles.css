@@ -26,7 +26,7 @@ settings:
         value: rg-phosphor-green
 */
 
-.reticular-graph {
+:is(.reticular-graph, .rhizone-facet) {
   --rg-accent: var(--interactive-accent, #d08b2c);
   --rg-ink: var(--text-normal, #d8d2c4);
   --rg-muted: var(--text-faint, #8a8475);
@@ -52,7 +52,7 @@ settings:
 }
 
 /* Phosphor overrides ------------------------------------------------------- */
-body.rg-phosphor-amber .reticular-graph {
+body.rg-phosphor-amber :is(.reticular-graph, .rhizone-facet) {
   --rg-accent: #ffb347;
   --rg-ink: #e8b765;
   --rg-muted: #8a6a2e;
@@ -63,7 +63,7 @@ body.rg-phosphor-amber .reticular-graph {
   --rg-mentioned: #d99a52;
   --rg-candidate: #a9762e;
 }
-body.rg-phosphor-green .reticular-graph {
+body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   --rg-accent: #7CFC9B;
   --rg-ink: #79e6a0;
   --rg-muted: #3f7a55;
@@ -750,4 +750,123 @@ body.rg-phosphor-green .reticular-graph {
   transform-origin: center;
   animation: rg-node-in 0.4s ease-out backwards;
   animation-delay: var(--rg-delay, 0ms);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Rhizone — the Ten Gateways (Etz Chaim). The tourist's frontispiece; altitude = rarity.
+   Reuses the Scope's CRT tokens (accent/phosphor) via the broadened :is() selector above.
+   ════════════════════════════════════════════════════════════════════════════ */
+.rg-tree-meta {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 12px;
+  font-size: 0.66em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rg-muted);
+}
+.rg-tree-meta-r { color: var(--color-blue, #6f8fd6); }
+.rg-tree-meta-l { color: var(--color-green, #6fcf97); }
+
+.rg-tree-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.rg-tree {
+  width: 100%;
+  height: 100%;
+}
+
+/* rarity axis — faint "floors" of the city, rare at the crown */
+.rg-tree-floor { stroke: var(--rg-grid); stroke-width: 1; opacity: 0.25; }
+.rg-tree-axis-label {
+  fill: var(--rg-muted);
+  font-family: var(--font-monospace, monospace);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  opacity: 0.7;
+}
+
+/* paths — co-occurrence between gateways; brightness ∝ affinity (--rg-path-strength) */
+.rg-tree-path {
+  stroke: var(--rg-accent);
+  stroke-width: 1.4;
+  opacity: var(--rg-path-strength, 0.2);
+}
+
+/* gateways */
+.rg-tree-gate { cursor: default; }
+.rg-tree-dot {
+  fill: var(--rg-accent);
+  stroke: var(--rg-bg);
+  stroke-width: 2;
+  transition: filter 0.15s ease, fill 0.15s ease;
+}
+.rg-gate-bridge .rg-tree-dot { fill: var(--rg-accent); }
+.rg-gate-a .rg-tree-dot { fill: var(--color-blue, #6f8fd6); }
+.rg-gate-b .rg-tree-dot { fill: var(--color-green, #6fcf97); }
+.rg-gate-ground .rg-tree-dot { fill: var(--rg-ink); }
+.rg-gate-empty .rg-tree-dot { fill: none; stroke: var(--rg-grid); stroke-dasharray: 3 3; }
+.rg-gate-daath .rg-tree-dot {
+  fill: none;
+  stroke: var(--text-normal, #fff);
+  stroke-dasharray: 2 4;
+  opacity: 0.5;
+}
+.rg-tree-gate:hover .rg-tree-dot { filter: drop-shadow(0 0 7px var(--rg-accent)); }
+
+.rg-tree-sephira {
+  fill: var(--rg-muted);
+  font-family: var(--font-monospace, monospace);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.rg-tree-label {
+  fill: var(--text-normal, #fff);
+  font-family: var(--font-monospace, monospace);
+  font-size: 16px;
+  pointer-events: none;
+}
+.rg-gate-empty .rg-tree-label,
+.rg-gate-empty .rg-tree-sephira { opacity: 0.4; }
+.rg-tree-df {
+  fill: var(--rg-muted);
+  font-family: var(--font-monospace, monospace);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* legend */
+.rg-tree-legend {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 6px 2px 2px;
+  border-top: 1px solid var(--rg-grid);
+  font-size: 0.72em;
+  letter-spacing: 0.08em;
+  color: var(--rg-muted);
+}
+.rg-tree-legend-chip { display: inline-flex; align-items: center; gap: 6px; }
+.rg-tree-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--rg-accent);
+  flex: 0 0 auto;
+}
+.rg-gate-a .rg-tree-legend-swatch,
+.rg-tree-legend-chip.rg-gate-a .rg-tree-legend-swatch { background: var(--color-blue, #6f8fd6); }
+.rg-tree-legend-chip.rg-gate-b .rg-tree-legend-swatch { background: var(--color-green, #6fcf97); }
+.rg-tree-legend-chip.rg-gate-ground .rg-tree-legend-swatch { background: var(--rg-ink); }
+.rg-tree-legend-chip.rg-gate-daath .rg-tree-legend-swatch {
+  background: none;
+  border: 1px dashed var(--text-normal, #fff);
 }

@@ -4,8 +4,10 @@ import { buildLocalWeb, neighborEdges, phantomFacets, type PhantomFacet } from "
 import type { LocalWeb, NodeState } from "./src/engine/types.ts";
 import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
 import { forge } from "./src/obsidian/connections.ts";
+import { buildTree as computeTree, type Tree } from "./src/engine/tree.ts";
 import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
 import { ReticularNoteView, RETICULAR_NOTE_VIEW_TYPE } from "./src/view/notePanel.ts";
+import { RhizoneFacetView, RHIZONE_FACET_VIEW_TYPE, type RhizoneHost } from "./src/view/rhizoneView.ts";
 
 interface RGSettings {
   /** per-state label zoom thresholds, 0 (always) .. 100 (only when fully zoomed in) */
@@ -23,7 +25,7 @@ const DEFAULT_SETTINGS: RGSettings = {
   showPhantom: false
 };
 
-export default class RhizoneGraphPlugin extends Plugin implements ScopeHost {
+export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, RhizoneHost {
   private index = new FacetIndex();
   private indexBuilt = false;
   private _settings: RGSettings = DEFAULT_SETTINGS;
@@ -55,6 +57,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost {
 
     this.registerView(RETICULAR_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularView(leaf, this));
     this.registerView(RETICULAR_NOTE_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularNoteView(leaf, this));
+    this.registerView(RHIZONE_FACET_VIEW_TYPE, (leaf: WorkspaceLeaf) => new RhizoneFacetView(leaf, this));
 
     this.addCommand({
       id: "open-scope",
@@ -71,11 +74,17 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost {
       name: "Open Reticular Note panel",
       callback: () => void this.openNotePanel()
     });
+    this.addCommand({
+      id: "open-rhizone",
+      name: "Open Rhizone (Ten Gateways)",
+      callback: () => void this.openRhizone()
+    });
 
     this.addRibbonIcon("radar", "Open in Reticular Graph", () => {
       const file = this.app.workspace.getActiveFile();
       if (file && file.extension === "md") void this.openInScope(file.path);
     });
+    this.addRibbonIcon("git-fork", "Open Rhizone", () => void this.openRhizone());
 
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
@@ -145,6 +154,13 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost {
   getLocalWeb(focusPath: string): LocalWeb {
     this.ensureIndex();
     return buildLocalWeb(focusPath, this.index);
+  }
+
+  // ── RhizoneHost ──────────────────────────────────────────────────────────
+  /** The whole vault as the Ten Gateways (Etz Chaim). */
+  buildTree(): Tree {
+    this.ensureIndex();
+    return computeTree(this.index);
   }
 
   neighborEdges(paths: string[]): Array<[string, string]> {
@@ -271,8 +287,26 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost {
       .filter((v): v is ReticularNoteView => v instanceof ReticularNoteView);
   }
 
+  private getRhizoneViews(): RhizoneFacetView[] {
+    return this.app.workspace
+      .getLeavesOfType(RHIZONE_FACET_VIEW_TYPE)
+      .map((l) => l.view)
+      .filter((v): v is RhizoneFacetView => v instanceof RhizoneFacetView);
+  }
+
   private refreshView(): void {
     for (const v of this.getScopeViews()) v.refresh();
+    for (const v of this.getRhizoneViews()) v.refresh();
+  }
+
+  /** Open (or reveal) the Rhizone Ten-Gateways view in a main-area tab. */
+  private async openRhizone(): Promise<void> {
+    let leaf = this.app.workspace.getLeavesOfType(RHIZONE_FACET_VIEW_TYPE)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getLeaf("tab");
+      await leaf.setViewState({ type: RHIZONE_FACET_VIEW_TYPE, active: true });
+    }
+    this.app.workspace.revealLeaf(leaf);
   }
 
   async openInScope(path: string): Promise<void> {

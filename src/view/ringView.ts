@@ -1,4 +1,4 @@
-import { ItemView, Menu, type WorkspaceLeaf, type TFile, type App, type Component } from "obsidian";
+import { Component, ItemView, MarkdownRenderer, Menu, type WorkspaceLeaf, type TFile, type App } from "obsidian";
 import type { Candidate, LocalWeb, NodeState } from "../engine/types.ts";
 import type { PhantomFacet } from "../engine/cocitation.ts";
 import { BreadcrumbTrail, installKeyboardNav } from "./interaction.ts";
@@ -75,8 +75,15 @@ export class ReticularView extends ItemView {
   } | null = null; // spotlight wiring for hover-dimming
   private _lastScore = 0; // last reticularity shown (so the count-up eases from it)
   private _scoreRaf = 0;
-  private _hoverTimer = 0; // debounce for hover → companion inspect
   private _nodeState = new Map<string, NodeState>(); // path → state, for fading a hidden state's edges
+  private openList: NodeState | "ghost" | null = null; // which list column is slid in
+  private _crumbEl: HTMLElement | null = null; // breadcrumb container (re-rendered on hover)
+  private _ctxLineEl: HTMLElement | null = null; // context line: name + shared facets
+  private _excerptEl: HTMLElement | null = null; // context body excerpt
+  private _ctxChild: Component | null = null; // per-render owner for the excerpt markdown
+  private _ctxTimer = 0; // debounce for hover → excerpt
+  private _openListEl: HTMLElement | null = null; // the open list column (for row spotlight reflection)
+  private _rowByPath = new Map<string, HTMLElement>(); // path → list row, to reflect graph hover in the list
 
   constructor(leaf: WorkspaceLeaf, host: ScopeHost) {
     super(leaf);
@@ -173,6 +180,11 @@ export class ReticularView extends ItemView {
   private render(): void {
     const root = this.contentEl;
     root.empty();
+    if (this._ctxChild) {
+      this.removeChild(this._ctxChild);
+      this._ctxChild = null;
+    }
+    window.clearTimeout(this._ctxTimer);
     if (!this.focusPath) {
       root.createDiv({ cls: "rg-empty", text: "Open a note, then run “Open in Reticular Graph”." });
       return;
@@ -180,8 +192,15 @@ export class ReticularView extends ItemView {
 
     try {
     const web = this.host.getLocalWeb(this.focusPath);
+    const ghosts = this.host.phantomFacets(this.focusPath).slice(0, 50);
+    const counts = {
+      candidate: web.outer.length,
+      connected: web.inner.filter((c) => c.state === "connected").length,
+      mentioned: web.inner.filter((c) => c.state === "mentioned").length,
+      ghost: ghosts.length
+    };
 
-    // ── bezel header + breadcrumb ──────────────────────────────────────────
+    // ── bezel header ───────────────────────────────────────────────────────
     const header = root.createDiv({ cls: "rg-bezel" });
     header.createSpan({ cls: "rg-bezel-tag", text: "RETICULAR" });
     header.createSpan({ cls: "rg-bezel-title", text: baseOf(this.focusPath) });
@@ -205,18 +224,11 @@ export class ReticularView extends ItemView {
       this.showControls = !this.showControls;
       this.render();
     });
-    // breadcrumb track — the path you've walked (click a crumb to jump back)
-    if (this.trail && this.trail.items().length > 1) {
-      const track = root.createDiv({ cls: "rg-note-track" });
-      track.createSpan({ cls: "rg-note-track-label", text: "track:" });
-      this.trail.items().forEach((p, i, arr) => {
-        const crumb = track.createSpan({ cls: "rg-note-crumb", text: baseOf(p) });
-        crumb.onClickEvent(() => this.jumpToPath(p));
-        if (i < arr.length - 1) track.createSpan({ cls: "rg-note-crumb-sep", text: " › " });
-      });
-    }
+    // ── topbar: breadcrumb (left) + counts (right, one line); context strip below ──
+    this.renderTopbar(root, counts);
+    this.renderContextStrip(root);
 
-    // ── stage: radar on the left, the connection lists on the right ──────
+    // ── stage: radar on the left, an on-demand list column on the right ──
     const stage = root.createDiv({ cls: "rg-stage" });
     const graphCol = stage.createDiv({ cls: "rg-graph" });
     const svg = graphCol.createSvg("svg", {
@@ -256,8 +268,6 @@ export class ReticularView extends ItemView {
       (mutual.length - zMut.length) +
       (candAll.length - zCand.length);
     const total = zOut.length + zIn.length + zMut.length + zCand.length;
-    // ghost notes — phantom (uncreated) wikilinks this note makes; their own sector on the rim
-    const ghosts = this.host.phantomFacets(this.focusPath).slice(0, 50);
 
     // motion master switch (overrides OS reduce-motion) + hide node names if labels are off
     this.contentEl.toggleClass("rg-anim", this.host.animations());
@@ -394,8 +404,8 @@ export class ReticularView extends ItemView {
       });
     }
 
-    // ── connection lists panel (Candidates / Connected / Mentioned / Ghost) beside the radar ──
-    this.renderPanel(stage, web, ghosts);
+    // ── on-demand list column (pushes the radar); opened by a count chip, closed by its ✕ ──
+    if (this.openList) this.renderListColumn(stage, web, ghosts);
 
     if (total === 0) {
       const d = this.host.debug(this.focusPath);
@@ -440,9 +450,6 @@ export class ReticularView extends ItemView {
       });
     }
 
-    // ── readout + preview (below the legend; scrolls without covering it) ───
-    const readout = root.createDiv({ cls: "rg-readout", attr: { "aria-live": "polite" } });
-
     // keyboard: Tab cycles contacts, Enter traverse, F forge, Esc back
     installKeyboardNav(svg, {
       traverse: () => this.selected && this.traverseTo(this.selected),
@@ -456,16 +463,12 @@ export class ReticularView extends ItemView {
       }
     });
 
-    this.renderReadout(readout, null);
-    this._readoutEl = readout;
-
     if (this.showControls) this.renderControls(root);
     } catch (e) {
       root.createDiv({ cls: "rg-error" }).setText("Reticular Graph render error:\n" + String((e as Error)?.stack ?? e));
     }
   }
 
-  private _readoutEl: HTMLElement | null = null;
 
   /** Apply the current pan/zoom transform and toggle per-state label visibility by zoom. */
   private applyView(): void {
@@ -621,18 +624,17 @@ export class ReticularView extends ItemView {
 
     const select = () => {
       this.selected = c.path;
-      if (this._readoutEl) this.renderReadout(this._readoutEl, c);
     };
     g.addEventListener("mouseenter", () => {
       select();
       if (!c.dangling && c.path) {
         this.highlight(c.path, true); // spotlight this node + its connections
-        this.hoverInspect(c); // and reflect it in the companion panel
+        this.reflectHover(c); // reflect in the breadcrumb + context strip + open list
       }
     });
     g.addEventListener("mouseleave", () => {
       if (!c.dangling && c.path) this.highlight(c.path, false);
-      this.revertInspect();
+      this.reflectHover(null);
     });
     g.addEventListener("focus", select);
     // native Page Preview popover on hover (no-op if the core plugin is off)
@@ -681,63 +683,147 @@ export class ReticularView extends ItemView {
   }
 
   /** Push a node into the companion panel without re-rooting the scope (hover inspect). */
-  private inspect(c: Candidate): void {
-    this.selected = c.path;
-    if (this._readoutEl) this.renderReadout(this._readoutEl, c);
-  }
-
-  /** The connection lists beside the radar: Candidates / Connected / Mentioned / Ghost. */
-  private renderPanel(stage: HTMLElement, web: LocalWeb, ghosts: PhantomFacet[]): void {
-    const panel = stage.createDiv({ cls: "rg-panel" });
-    const counts = panel.createDiv({ cls: "rg-note-counts" });
-    const byState: Record<NodeState, Candidate[]> = {
-      candidate: web.outer,
-      connected: web.inner.filter((c) => c.state === "connected"),
-      mentioned: web.inner.filter((c) => c.state === "mentioned")
+  // ── top bar: breadcrumb (left) + counts (right, one line) ──
+  private renderTopbar(root: HTMLElement, counts: { candidate: number; connected: number; mentioned: number; ghost: number }): void {
+    const bar = root.createDiv({ cls: "rg-topbar" });
+    this._crumbEl = bar.createDiv({ cls: "rg-crumbs" });
+    this.renderCrumbs(null);
+    const row = bar.createDiv({ cls: "rg-counts" });
+    const chip = (key: NodeState | "ghost", glyph: string, n: number): void => {
+      const c = row.createSpan({
+        cls: `rg-countchip rg-${key}` + (this.openList === key ? " is-open" : ""),
+        attr: { role: "button", "aria-label": `${n} ${key}` }
+      });
+      c.createSpan({ cls: `rg-glyph rg-${key}`, text: glyph });
+      c.createSpan({ cls: "rg-countchip-n", text: String(n) });
+      c.onClickEvent(() => {
+        this.openList = this.openList === key ? null : key;
+        this.render();
+      });
     };
-    const sections: Array<{ key: string; glyph: string; label: string; count: number; el: HTMLDetailsElement }> = [];
-    for (const state of SECTION_ORDER) {
-      sections.push({
-        key: state,
-        glyph: GLYPH[state],
-        label: SECTION_TITLE[state].toLowerCase(),
-        count: byState[state].length,
-        el: this.renderListSection(panel, state, byState[state])
-      });
-    }
-    sections.push({ key: "ghost", glyph: "◌", label: "ghost notes", count: ghosts.length, el: this.renderGhostList(panel, ghosts) });
+    chip("candidate", "✦", counts.candidate);
+    chip("connected", "●", counts.connected);
+    chip("mentioned", "○", counts.mentioned);
+    chip("ghost", "◌", counts.ghost);
+  }
 
-    for (const s of sections) {
-      const chip = counts.createSpan({ cls: `rg-count rg-${s.key}`, attr: { role: "button" } });
-      chip.createSpan({ cls: `rg-glyph rg-${s.key}`, text: s.glyph });
-      chip.createSpan({ text: ` ${s.count} ${s.label}` });
-      chip.onClickEvent(() => {
-        s.el.open = !s.el.open;
-        chip.toggleClass("is-open", s.el.open);
-        if (s.el.open) s.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      });
+  /** (Re)draw the breadcrumb; `hoverPath` appends a transient crumb for the hovered node. */
+  private renderCrumbs(hoverPath: string | null): void {
+    const el = this._crumbEl;
+    if (!el) return;
+    el.empty();
+    el.createSpan({ cls: "rg-note-track-label", text: "track:" });
+    const items = this.trail ? this.trail.items() : [this.focusPath];
+    items.forEach((p, i) => {
+      const crumb = el.createSpan({ cls: "rg-note-crumb", text: baseOf(p) });
+      crumb.onClickEvent(() => this.jumpToPath(p));
+      if (i < items.length - 1 || hoverPath) el.createSpan({ cls: "rg-note-crumb-sep", text: " › " });
+    });
+    if (hoverPath) el.createSpan({ cls: "rg-note-crumb rg-crumb-hover", text: baseOf(hoverPath) });
+  }
+
+  // ── context strip: name + shared facets, then a short body excerpt ──
+  private renderContextStrip(root: HTMLElement): void {
+    const ctx = root.createDiv({ cls: "rg-context" });
+    this._ctxLineEl = ctx.createDiv({ cls: "rg-context-line" });
+    this._excerptEl = ctx.createDiv({ cls: "rg-context-excerpt markdown-rendered" });
+    this.showContext(null); // the focus note by default
+  }
+
+  /** Point the context strip at a candidate (hover) or, when null, the focus note. */
+  private showContext(c: Candidate | null): void {
+    const path = c?.path || this.focusPath;
+    if (this._ctxLineEl) {
+      this._ctxLineEl.empty();
+      this._ctxLineEl.createSpan({ cls: "rg-context-name", text: c ? c.basename : baseOf(this.focusPath) });
+      if (c && c.shared.length) {
+        this._ctxLineEl.createSpan({ cls: "rg-context-why", text: " · " + c.shared.slice(0, 4).map((f) => f.label).join(" · ") });
+      }
+    }
+    this.renderExcerpt(path);
+  }
+
+  /** Debounced markdown excerpt into the context strip (focus note, or a hovered one). */
+  private renderExcerpt(path: string): void {
+    window.clearTimeout(this._ctxTimer);
+    this._ctxTimer = window.setTimeout(() => void this.drawExcerpt(path), 90);
+  }
+
+  private async drawExcerpt(path: string): Promise<void> {
+    const el = this._excerptEl;
+    if (!el) return;
+    if (this._ctxChild) {
+      this.removeChild(this._ctxChild);
+      this._ctxChild = null;
+    }
+    el.empty();
+    const file = this.host.fileForPath(path);
+    if (!file) return;
+    let body = "";
+    try {
+      body = await this.host.readBody(path);
+    } catch {
+      return;
+    }
+    const child = new Component();
+    this.addChild(child);
+    this._ctxChild = child;
+    await MarkdownRenderer.render(this.host.app, cleanExcerpt(body).slice(0, 600).trim(), el, path, child);
+  }
+
+  /** Reflect a hovered node/row across the breadcrumb, context strip, and the open list. */
+  private reflectHover(c: Candidate | null): void {
+    this.renderCrumbs(c?.path ?? null);
+    this.showContext(c);
+    if (this._openListEl) {
+      this._openListEl.querySelectorAll(".rg-note-row.rg-on").forEach((r) => r.classList.remove("rg-on"));
+      if (c) this._rowByPath.get(c.path)?.classList.add("rg-on");
     }
   }
 
-  private renderListSection(parent: HTMLElement, state: NodeState, items: Candidate[]): HTMLDetailsElement {
-    const sec = parent.createEl("details", { cls: `rg-note-section rg-${state}` });
-    sec.open = false;
-    const title = sec.createEl("summary", { cls: "rg-note-section-title" });
-    title.createSpan({ cls: `rg-glyph rg-${state}`, text: GLYPH[state] });
-    title.createSpan({ text: ` ${SECTION_TITLE[state]} (${items.length})` });
+  // ── the slide-in list column (pushes the radar); one category at a time ──
+  private renderListColumn(stage: HTMLElement, web: LocalWeb, ghosts: PhantomFacet[]): void {
+    const col = stage.createDiv({ cls: "rg-listcol" });
+    this._openListEl = col;
+    this._rowByPath = new Map();
+    const head = col.createDiv({ cls: "rg-listcol-head" });
+    head.createSpan({ cls: "rg-listcol-title", text: this.openList === "ghost" ? "Ghost notes" : SECTION_TITLE[this.openList as NodeState] });
+    const close = head.createSpan({ cls: "rg-listcol-close", text: "✕", attr: { role: "button", "aria-label": "Close list" } });
+    close.onClickEvent(() => {
+      this.openList = null;
+      this.render();
+    });
+    const body = col.createDiv({ cls: "rg-listcol-body" });
+    if (this.openList === "ghost") {
+      this.fillGhostRows(body, ghosts);
+    } else {
+      const state = this.openList as NodeState;
+      const items = state === "candidate" ? web.outer : web.inner.filter((c) => c.state === state);
+      this.fillRows(body, state, items);
+    }
+  }
+
+  private fillRows(parent: HTMLElement, state: NodeState, items: Candidate[]): void {
     if (!items.length) {
-      sec.createDiv({ cls: "rg-note-section-empty", text: "—" });
-      return sec;
+      parent.createDiv({ cls: "rg-note-section-empty", text: "—" });
+      return;
     }
     for (const c of items) {
-      const row = sec.createDiv({ cls: "rg-note-row" + (c.dangling ? " rg-dangling" : "") });
+      const row = parent.createDiv({ cls: `rg-note-row rg-${c.state}` + (c.dangling ? " rg-dangling" : "") });
+      if (c.path) this._rowByPath.set(c.path, row);
       const name = row.createSpan({ cls: "rg-note-row-name", text: (c.dangling ? "⚠ " : "") + c.basename });
       if (c.dangling) {
         name.onClickEvent((ev) => this.openRemediation(c.basename, ev));
       } else if (c.path) {
         name.onClickEvent(() => this.activate(c)); // re-centre + open in editor
-        row.addEventListener("mouseenter", () => this.highlight(c.path, true));
-        row.addEventListener("mouseleave", () => this.highlight(c.path, false));
+        row.addEventListener("mouseenter", () => {
+          this.highlight(c.path, true);
+          this.reflectHover(c);
+        });
+        row.addEventListener("mouseleave", () => {
+          this.highlight(c.path, false);
+          this.reflectHover(null);
+        });
         row.addEventListener("mouseover", (ev) => this.hoverLink(ev, row, c.basename));
       }
       if (c.shared.length) {
@@ -753,25 +839,18 @@ export class ReticularView extends ItemView {
         });
       }
     }
-    return sec;
   }
 
-  private renderGhostList(parent: HTMLElement, ghosts: PhantomFacet[]): HTMLDetailsElement {
-    const sec = parent.createEl("details", { cls: "rg-note-section rg-ghost" });
-    sec.open = false;
-    const title = sec.createEl("summary", { cls: "rg-note-section-title" });
-    title.createSpan({ cls: "rg-glyph rg-ghost", text: "◌" });
-    title.createSpan({ text: ` Ghost notes (${ghosts.length})` });
+  private fillGhostRows(parent: HTMLElement, ghosts: PhantomFacet[]): void {
     if (!ghosts.length) {
-      sec.createDiv({ cls: "rg-note-section-empty", text: "—" });
-      return sec;
+      parent.createDiv({ cls: "rg-note-section-empty", text: "—" });
+      return;
     }
     for (const g of ghosts) {
-      const row = sec.createDiv({ cls: "rg-note-row rg-phantom-row" });
+      const row = parent.createDiv({ cls: "rg-note-row rg-phantom-row" });
       row.createSpan({ cls: "rg-note-row-name", text: "◌ " + g.label });
       row.createSpan({ cls: "rg-note-why", text: g.shared > 1 ? `${g.shared} notes mention this` : "only here" });
     }
-    return sec;
   }
 
   /** Obsidian's native page-preview popover near `el` (needs core Page Preview enabled). */
@@ -786,25 +865,11 @@ export class ReticularView extends ItemView {
     });
   }
 
-  /** Debounced hover → companion, so sweeping the cursor across rows doesn't thrash the panel. */
-  private hoverInspect(c: Candidate): void {
-    window.clearTimeout(this._hoverTimer);
-    if (c.dangling || !c.path) return;
-    this._hoverTimer = window.setTimeout(() => this.inspect(c), 110);
-  }
-
-  /** Pointer left a node/row — fall back to the focused (main) note in the companion. */
-  private revertInspect(): void {
-    window.clearTimeout(this._hoverTimer);
-    this._hoverTimer = window.setTimeout(() => this.emitFocus(), 160);
-  }
-
   /** Click → make this note the new centre AND open it in the editor. */
   private activate(c: Candidate): void {
     if (c.dangling || !c.path) return;
-    window.clearTimeout(this._hoverTimer);
     this.host.app.workspace.openLinkText(c.basename, this.focusPath); // open in the editor
-    this.traverseTo(c.path); // re-centre the scope here (re-renders + syncs the companion)
+    this.traverseTo(c.path); // re-centre the scope here (re-renders)
   }
 
   /** Spotlight: dim the whole graph except `path`, the focus core, and the connections `path` has. */
@@ -832,23 +897,6 @@ export class ReticularView extends ItemView {
     }
   }
 
-
-  private renderReadout(el: HTMLElement, c: Candidate | null): void {
-    el.empty();
-    if (!c) {
-      el.createSpan({ cls: "rg-readout-hint", text: "hover → preview in panel · click → open + re-centre · F designate · scroll zoom · drag pan" });
-      return;
-    }
-    el.createSpan({ cls: "rg-readout-kind", text: "CONTACT" });
-    el.createSpan({ cls: "rg-readout-name", text: ` · ${c.basename}` });
-    if (c.shared.length) {
-      el.createSpan({ cls: "rg-readout-why", text: " — shared: " + c.shared.map((f) => f.label).join(" · ") });
-    }
-    if (c.state === "candidate") {
-      const forge = el.createSpan({ cls: "rg-designate", text: " [ designate ↵ ]" });
-      forge.onClickEvent(() => void this.forgeSelected());
-    }
-  }
 
   private openRemediation(oldTarget: string, ev: MouseEvent): void {
     const titles: Record<RemediationAction, string> = {
@@ -914,4 +962,20 @@ function baseOf(path: string): string {
 }
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/** Strip frontmatter + code/image/comment noise so the context excerpt reads as plain text. */
+function cleanExcerpt(md: string): string {
+  let out = md;
+  if (out.startsWith("---\n")) {
+    const end = out.indexOf("\n---", 4);
+    if (end !== -1) out = out.slice(end + 4);
+  }
+  return out
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/~~~[\s\S]*?~~~/g, "")
+    .replace(/!\[\[[^\]]*\]\]/g, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/%%[\s\S]*?%%/g, "")
+    .replace(/\n{3,}/g, "\n\n");
 }

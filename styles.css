@@ -199,6 +199,78 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   overflow-y: auto;
   padding-right: 2px;
 }
+
+/* top bar: breadcrumb (left) + counts (right) on one line */
+.rg-topbar { display: flex; align-items: center; gap: 12px; padding: 2px 2px 0; }
+.rg-crumbs {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow-x: auto;
+  font-size: 0.74em;
+  color: var(--rg-muted);
+}
+.rg-crumbs .rg-note-track-label { text-transform: uppercase; letter-spacing: 0.16em; opacity: 0.6; margin-right: 6px; }
+.rg-crumbs .rg-note-crumb { cursor: pointer; color: var(--rg-ink); }
+.rg-crumbs .rg-note-crumb:hover { color: var(--rg-accent); }
+.rg-crumbs .rg-note-crumb-sep { color: var(--rg-accent); opacity: 0.5; }
+.rg-crumbs .rg-crumb-hover { color: var(--rg-accent); font-style: italic; cursor: default; }
+
+.rg-counts { flex: 0 0 auto; display: flex; gap: 6px; }
+.rg-countchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 0.74em;
+  color: var(--rg-muted);
+  border: 1px solid var(--rg-grid);
+  border-radius: 999px;
+  padding: 1px 8px;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.rg-countchip:hover { color: var(--rg-accent); border-color: var(--rg-accent); }
+.rg-countchip.is-open { color: var(--rg-accent); border-color: var(--rg-accent); background: var(--background-modifier-hover); }
+.rg-countchip.rg-connected .rg-glyph { color: var(--rg-connected); }
+.rg-countchip.rg-mentioned .rg-glyph { color: var(--rg-mentioned); }
+.rg-countchip.rg-candidate .rg-glyph { color: var(--rg-candidate); }
+.rg-countchip-n { font-variant-numeric: tabular-nums; }
+
+/* context strip: name + shared facets, then a short body excerpt */
+.rg-context {
+  padding: 3px 4px 6px;
+  border-bottom: 1px solid var(--rg-grid);
+  max-height: 20vh;
+  overflow-y: auto;
+}
+.rg-context-line { font-size: 0.82em; color: var(--rg-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rg-context-name { font-weight: 600; }
+.rg-context-why { color: var(--rg-muted); }
+.rg-context-excerpt { font-size: 0.84em; line-height: 1.45; color: var(--rg-muted); margin-top: 3px; }
+.rg-context-excerpt :is(h1, h2, h3, h4) { font-size: 1em; margin: 0.2em 0; color: var(--rg-ink); }
+.rg-context-excerpt p { margin: 0.2em 0; }
+.rg-context-excerpt img { display: none; }
+
+/* slide-in list column (pushes the radar); opened by a count chip */
+.rg-listcol {
+  flex: 0 0 38%;
+  max-width: 320px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--rg-grid);
+  padding-left: 8px;
+}
+.rg-anim .rg-listcol { animation: rg-slidein 180ms ease; }
+@keyframes rg-slidein { from { transform: translateX(16px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.rg-listcol-head { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--rg-grid); }
+.rg-listcol-title { flex: 1 1 auto; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.14em; color: var(--rg-muted); }
+.rg-listcol-close { cursor: pointer; color: var(--rg-muted); font-size: 0.9em; line-height: 1; }
+.rg-listcol-close:hover { color: var(--rg-accent); }
+.rg-listcol-body { flex: 1 1 auto; overflow-y: auto; padding-top: 4px; }
+
+/* a list row lit because its node is hovered in the graph */
+.rg-note-row.rg-on { background: var(--background-modifier-hover); border-radius: 4px; }
 .rg-galaxy {
   position: relative;
   width: 100%;

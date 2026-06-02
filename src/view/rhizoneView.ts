@@ -48,6 +48,8 @@ export class RhizoneFacetView extends ItemView {
   private keystone: string | null = null; // a note path; null = ambient
   private order: "cluster" | "alpha" = "cluster";
   private vt = { z: 1, tx: 0, ty: 0 };
+  private cursor = -1; // arrow/scroll navigation index into the ambient outer ring
+  private labelZoom = 55; // 0..100 → the zoom at which outer-ring labels appear
 
   private notes: NoteRef[] = [];
   private clusters: Record<string, string> = {};
@@ -113,6 +115,14 @@ export class RhizoneFacetView extends ItemView {
       if (this.order === "cluster" && !Object.keys(this.clusters).length) this.clusters = this.host.noteClusters();
       this.layout();
     });
+    const labelSlider = bezel.createEl("input", {
+      cls: "rg-gx-labelzoom",
+      attr: { type: "range", min: "0", max: "100", value: String(this.labelZoom), title: "When labels appear (by zoom)" }
+    });
+    labelSlider.addEventListener("input", () => {
+      this.labelZoom = Number(labelSlider.value);
+      this.applyTransform();
+    });
     this._releaseEl = bezel.createSpan({ cls: "rg-rz-back", text: "‹ release", attr: { role: "button" } });
     this._releaseEl.onClickEvent(() => this.release());
 
@@ -120,10 +130,16 @@ export class RhizoneFacetView extends ItemView {
     const stage = root.createDiv({ cls: "rg-tree-stage" });
     const svg = stage.createSvg("svg", {
       cls: ["rg-tree", "rg-gx"],
-      attr: { viewBox: `0 0 ${VIEW} ${VIEW}`, role: "group", "aria-label": "The vault as a galaxy of notes" }
+      attr: { viewBox: `0 0 ${VIEW} ${VIEW}`, role: "group", tabindex: "0", "aria-label": "The vault as a galaxy of notes" }
     });
     svg.addEventListener("click", (e) => {
       if (e.target === svg) this.release(); // click the void → let go
+    });
+    svg.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") (e.preventDefault(), this.moveCursor(1));
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") (e.preventDefault(), this.moveCursor(-1));
+      else if (e.key === "Enter") (e.preventDefault(), this.summonCursor());
+      else if (e.key === "Escape") (e.preventDefault(), this.release());
     });
     const pan = svg.createSvg("g", { cls: "rg-gx-pan" });
     this._pan = pan;
@@ -131,7 +147,7 @@ export class RhizoneFacetView extends ItemView {
 
     // every note becomes a persistent dot we later slide around
     for (const n of this.notes) {
-      const g = pan.createSvg("g", { cls: ["rg-gx-note"], attr: { "data-path": n.path, transform: `translate(${C} ${C})` } });
+      const g = pan.createSvg("g", { cls: ["rg-gx-note", "rg-enter"], attr: { "data-path": n.path, transform: `translate(${C} ${C})` } });
       g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: DOT } });
       g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
         trunc(displayLabel(n.basename), 28)
@@ -154,20 +170,54 @@ export class RhizoneFacetView extends ItemView {
     }
 
     const legend = root.createDiv({ cls: "rg-tree-legend" });
-    legend.createSpan({ text: "click a note to summon it · click again (or the void) to release · scroll zoom · drag pan" });
+    legend.createSpan({ text: "click a note to summon · ←/→ or scroll to roam the ring · enter summons · ctrl-scroll zoom · drag pan" });
 
     this.applyTransform();
-    this.layout();
+    // paint the entering (centred) state first, then fly the dots out + fade them in
+    requestAnimationFrame(() => {
+      this.layout();
+      this._noteEls.forEach((g) => g.classList.remove("rg-enter"));
+    });
   }
 
   private toggle(path: string): void {
     this.keystone = this.keystone === path ? null : path;
+    this.cursor = -1;
+    this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
+    if (this.keystone) this.panToCenter();
     this.layout();
   }
   private release(): void {
     if (!this.keystone) return;
     this.keystone = null;
     this.layout();
+  }
+
+  /** Step a highlight cursor around the ambient outer ring (arrow keys / scroll). */
+  private moveCursor(delta: number): void {
+    if (this.keystone) return; // ring navigation is for the ambient view
+    const ordered = this.orderedNotes();
+    if (!ordered.length) return;
+    this.cursor = this.cursor < 0 ? (delta > 0 ? 0 : ordered.length - 1) : (this.cursor + delta + ordered.length) % ordered.length;
+    const note = ordered[this.cursor];
+    this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
+    this._noteEls.get(note.path)?.classList.add("rg-cursor");
+  }
+  private summonCursor(): void {
+    if (this.keystone) return void this.release();
+    const ordered = this.orderedNotes();
+    if (this.cursor >= 0 && this.cursor < ordered.length) this.toggle(ordered[this.cursor].path);
+  }
+
+  /** zoom at/above which outer-ring labels appear (slider 0..100 → 0.5..3.0×). */
+  private zThreshold(): number {
+    return 0.5 + (this.labelZoom / 100) * 2.5;
+  }
+  /** Centre the galaxy in the viewBox (after summoning, the keystone sits dead-centre). */
+  private panToCenter(): void {
+    this.vt.tx = C * (1 - this.vt.z);
+    this.vt.ty = C * (1 - this.vt.z);
+    this.applyTransform();
   }
 
   // ── position every note for the current state (slides via CSS transition) ──
@@ -205,6 +255,17 @@ export class RhizoneFacetView extends ItemView {
     g.classList.toggle("rg-dim", s.dim);
     g.classList.toggle("rg-related", s.related);
     g.classList.toggle("rg-keystone", s.keystone);
+    // fan the label outward from the galaxy centre, anchored by its angle
+    const label = g.querySelector(".rg-gx-label");
+    if (label) {
+      const dx = p.x - C;
+      const dy = p.y - C;
+      const len = Math.hypot(dx, dy) || 1;
+      const off = DOT + 12;
+      label.setAttribute("x", String((dx / len) * off));
+      label.setAttribute("y", String((dy / len) * off + 4));
+      label.setAttribute("text-anchor", dx > len * 0.3 ? "start" : dx < -len * 0.3 ? "end" : "middle");
+    }
   }
 
   /** The centre marker (the keystone's name). Cleared/rebuilt each focus. (Slice 3: the local tree.) */
@@ -235,15 +296,20 @@ export class RhizoneFacetView extends ItemView {
   // ── pan + zoom ──
   private applyTransform(): void {
     this._pan?.setAttribute("transform", `translate(${this.vt.tx} ${this.vt.ty}) scale(${this.vt.z})`);
+    this.contentEl.toggleClass("rg-show-labels", this.vt.z >= this.zThreshold());
   }
   private attachPanZoom(svg: SVGElement): void {
     svg.addEventListener(
       "wheel",
       (e: WheelEvent) => {
         e.preventDefault();
-        const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-        this.vt.z = Math.min(4, Math.max(0.35, this.vt.z * f));
-        this.applyTransform();
+        if (e.ctrlKey || e.metaKey || this.keystone) {
+          const f = e.deltaY < 0 ? 1.12 : 1 / 1.12; // ctrl-scroll (or while focused) = zoom
+          this.vt.z = Math.min(4, Math.max(0.35, this.vt.z * f));
+          this.applyTransform();
+        } else {
+          this.moveCursor(e.deltaY > 0 ? 1 : -1); // plain scroll = roam the ring
+        }
       },
       { passive: false }
     );
@@ -255,6 +321,7 @@ export class RhizoneFacetView extends ItemView {
       lx = e.clientX;
       ly = e.clientY;
       svg.addClass("rg-grabbing");
+      (svg as unknown as HTMLElement).focus?.(); // so arrow keys work after a click
     });
     svg.addEventListener("pointermove", (e: PointerEvent) => {
       if (!dragging) return;

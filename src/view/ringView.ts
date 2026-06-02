@@ -199,6 +199,7 @@ export class ReticularView extends ItemView {
       mentioned: web.inner.filter((c) => c.state === "mentioned").length,
       ghost: ghosts.length
     };
+    if (this.openList && counts[this.openList] === 0) this.openList = null; // close a column that's now empty
 
     // ── bezel header ───────────────────────────────────────────────────────
     const header = root.createDiv({ cls: "rg-bezel" });
@@ -629,12 +630,12 @@ export class ReticularView extends ItemView {
       select();
       if (!c.dangling && c.path) {
         this.highlight(c.path, true); // spotlight this node + its connections
-        this.reflectHover(c); // reflect in the breadcrumb + context strip + open list
+        this.scheduleReflect(c); // reflect in the breadcrumb + context strip + open list
       }
     });
     g.addEventListener("mouseleave", () => {
       if (!c.dangling && c.path) this.highlight(c.path, false);
-      this.reflectHover(null);
+      this.scheduleReflect(null);
     });
     g.addEventListener("focus", select);
     // native Page Preview popover on hover (no-op if the core plugin is off)
@@ -690,6 +691,7 @@ export class ReticularView extends ItemView {
     this.renderCrumbs(null);
     const row = bar.createDiv({ cls: "rg-counts" });
     const chip = (key: NodeState | "ghost", glyph: string, n: number): void => {
+      if (n === 0) return; // a category with nothing for this note just disappears
       const c = row.createSpan({
         cls: `rg-countchip rg-${key}` + (this.openList === key ? " is-open" : ""),
         attr: { role: "button", "aria-label": `${n} ${key}` }
@@ -743,10 +745,15 @@ export class ReticularView extends ItemView {
     this.renderExcerpt(path);
   }
 
-  /** Debounced markdown excerpt into the context strip (focus note, or a hovered one). */
+  /** Render the context excerpt for `path` immediately (hover dwell is handled by scheduleReflect). */
   private renderExcerpt(path: string): void {
+    void this.drawExcerpt(path);
+  }
+
+  /** Debounce hover reflection — require a dwell (~240ms) so sweeping past nodes doesn't thrash the info. */
+  private scheduleReflect(c: Candidate | null): void {
     window.clearTimeout(this._ctxTimer);
-    this._ctxTimer = window.setTimeout(() => void this.drawExcerpt(path), 90);
+    this._ctxTimer = window.setTimeout(() => this.reflectHover(c), 240);
   }
 
   private async drawExcerpt(path: string): Promise<void> {
@@ -818,11 +825,11 @@ export class ReticularView extends ItemView {
         name.onClickEvent(() => this.activate(c)); // re-centre + open in editor
         row.addEventListener("mouseenter", () => {
           this.highlight(c.path, true);
-          this.reflectHover(c);
+          this.scheduleReflect(c);
         });
         row.addEventListener("mouseleave", () => {
           this.highlight(c.path, false);
-          this.reflectHover(null);
+          this.scheduleReflect(null);
         });
         row.addEventListener("mouseover", (ev) => this.hoverLink(ev, row, c.basename));
       }

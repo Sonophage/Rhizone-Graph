@@ -240,7 +240,7 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-context {
   padding: 3px 4px 6px;
   border-bottom: 1px solid var(--rg-grid);
-  max-height: 20vh;
+  height: 96px; /* static — doesn't jump as different-length excerpts render on hover */
   overflow-y: auto;
 }
 .rg-context-line { font-size: 0.82em; color: var(--rg-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -774,15 +774,6 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   padding-left: 8px;
   margin-top: 6px;
 }
-
-/* editable properties — inherit the theme's native form styling */
-.rg-note-props { margin: 6px 0 12px; }
-.rg-note-props > summary { cursor: pointer; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.74em; }
-.rg-prop-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: var(--font-ui-small); }
-.rg-prop-key { width: 34%; min-width: 90px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
-/* lean on the theme's native input/textarea styling so properties match Obsidian */
-.rg-prop-input, .rg-prop-area { flex: 1 1 auto; width: 100%; font-family: inherit; font-size: inherit; }
-.rg-prop-area { min-height: 2.6em; resize: vertical; }
 
 /* connection sections (collapsible) */
 .rg-note-section { margin: 8px 0; }

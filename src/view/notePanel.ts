@@ -2,7 +2,7 @@ import { Component, ItemView, MarkdownRenderer, type WorkspaceLeaf } from "obsid
 import type { Candidate, NodeState } from "../engine/types.ts";
 import type { ScopeHost } from "./ringView.ts";
 
-export const RHIZONE_NOTE_VIEW_TYPE = "rhizone-graph-note";
+export const RETICULAR_NOTE_VIEW_TYPE = "reticular-note";
 
 const GLYPH: Record<NodeState, string> = { connected: "●", mentioned: "○", candidate: "✦" };
 const SECTION_ORDER: NodeState[] = ["candidate", "connected", "mentioned"];
@@ -17,7 +17,7 @@ const SECTION_TITLE: Record<NodeState, string> = {
  * (title + meta + excerpt + editable properties), then Candidate / Connected / Mentioned
  * sections of clickable connections. Click any row to traverse; designate to forge.
  */
-export class RhizoneNoteView extends ItemView {
+export class ReticularNoteView extends ItemView {
   private host: ScopeHost;
   private current = "";
   private trail: string[] = [];
@@ -29,17 +29,17 @@ export class RhizoneNoteView extends ItemView {
   }
 
   getViewType(): string {
-    return RHIZONE_NOTE_VIEW_TYPE;
+    return RETICULAR_NOTE_VIEW_TYPE;
   }
   getDisplayText(): string {
-    return this.current ? `Note · ${baseOf(this.current)}` : "Rhizone Note";
+    return this.current ? `Note · ${baseOf(this.current)}` : "Reticular Note";
   }
   getIcon(): string {
     return "panel-right";
   }
 
   async onOpen(): Promise<void> {
-    this.contentEl.addClass("rhizone-note");
+    this.contentEl.addClass("reticular-note");
     this.renderEmpty();
   }
 

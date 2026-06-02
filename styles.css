@@ -1,4 +1,4 @@
-/* Rhizone Graph — "The Scope". CRT/Bureau targeting reticle.
+/* Reticular Graph — "The Scope". CRT/Bureau targeting reticle.
    All colour flows through CSS variables that default to Obsidian theme tokens, so the
    view adapts to dark / daylight / glass / accent presets automatically. The phosphor
    override and motion sliders below are exposed via the Style Settings plugin. */
@@ -26,7 +26,7 @@ settings:
         value: rg-phosphor-green
 */
 
-.rhizone-graph {
+.reticular-graph {
   --rg-accent: var(--interactive-accent, #d08b2c);
   --rg-ink: var(--text-normal, #d8d2c4);
   --rg-muted: var(--text-faint, #8a8475);
@@ -52,7 +52,7 @@ settings:
 }
 
 /* Phosphor overrides ------------------------------------------------------- */
-body.rg-phosphor-amber :is(.rhizone-graph, .rhizone-atlas) {
+body.rg-phosphor-amber .reticular-graph {
   --rg-accent: #ffb347;
   --rg-ink: #e8b765;
   --rg-muted: #8a6a2e;
@@ -63,7 +63,7 @@ body.rg-phosphor-amber :is(.rhizone-graph, .rhizone-atlas) {
   --rg-mentioned: #d99a52;
   --rg-candidate: #a9762e;
 }
-body.rg-phosphor-green :is(.rhizone-graph, .rhizone-atlas) {
+body.rg-phosphor-green .reticular-graph {
   --rg-accent: #7CFC9B;
   --rg-ink: #79e6a0;
   --rg-muted: #3f7a55;
@@ -290,7 +290,7 @@ body.rg-phosphor-green :is(.rhizone-graph, .rhizone-atlas) {
   pointer-events: none;
 }
 
-/* Focus core — disc + ★ + rhizonicity score ------------------------------- */
+/* Focus core — disc + ★ + reticularity score ------------------------------- */
 .rg-core-disc {
   fill: color-mix(in srgb, var(--rg-accent) 14%, var(--background-primary, #0d0d0d));
   stroke: var(--rg-accent);
@@ -599,21 +599,21 @@ body.rg-phosphor-green :is(.rhizone-graph, .rhizone-atlas) {
 .rg-lab-candidate .rg-candidate .rg-star-label { opacity: 1; }
 
 /* Companion inspector ------------------------------------------------------ */
-.rhizone-note { padding: 10px 14px; height: 100%; overflow: auto; }
+.reticular-note { padding: 10px 14px; height: 100%; overflow: auto; }
 .rg-note-empty { color: var(--text-faint); font-style: italic; text-align: center; padding-top: 2em; }
 
 /* Animate the companion when its focus changes — each block fades + lifts in. */
 @keyframes rg-note-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
-.rhizone-note > .rg-note-track,
-.rhizone-note > .rg-note-head,
-.rhizone-note > .rg-note-counts,
-.rhizone-note > .rg-note-preview,
-.rhizone-note > .rg-note-props,
-.rhizone-note > .rg-note-section {
+.reticular-note > .rg-note-track,
+.reticular-note > .rg-note-head,
+.reticular-note > .rg-note-counts,
+.reticular-note > .rg-note-preview,
+.reticular-note > .rg-note-props,
+.reticular-note > .rg-note-section {
   animation: rg-note-in 200ms ease both;
 }
 @media (prefers-reduced-motion: reduce) {
-  .rhizone-note > * { animation: none; }
+  .reticular-note > * { animation: none; }
 }
 
 .rg-note-track {
@@ -751,145 +751,3 @@ body.rg-phosphor-green :is(.rhizone-graph, .rhizone-atlas) {
   animation: rg-node-in 0.4s ease-out backwards;
   animation-delay: var(--rg-delay, 0ms);
 }
-
-/* ════════════════════════════════════════════════════════════════════════════
-   Facet Atlas — the whole-vault constellation. Reuses the Scope's CRT palette.
-   ════════════════════════════════════════════════════════════════════════════ */
-/* same CRT token set as the Scope, so the Atlas inherits accent/phosphor/daylight */
-.rhizone-atlas {
-  --rg-accent: var(--interactive-accent, #d08b2c);
-  --rg-ink: var(--text-normal, #d8d2c4);
-  --rg-muted: var(--text-faint, #8a8475);
-  --rg-grid: var(--background-modifier-border, #3a3a3a);
-  --rg-panel: var(--background-secondary, #1b1b1b);
-  --rg-line: var(--rg-accent);
-  --rg-link: var(--color-cyan, #5fb3c9);
-  --rg-bg: color-mix(in srgb, var(--background-primary, #0d0d0d) 90%, var(--text-normal, #ffffff));
-  font-family: var(--font-monospace, monospace);
-}
-.rhizone-atlas .view-content { padding: 0; }
-.rg-atlas-stage {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  background: var(--rg-bg);
-  color: var(--rg-ink);
-}
-.rg-atlas-graph {
-  flex: 1 1 auto;
-  min-width: 0;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-.rg-atlas-galaxy { flex: 1 1 auto; width: 100%; height: 100%; overflow: visible; }
-
-/* bezel header — mirrors the Scope's targeting-reticle chrome */
-.rg-atlas-bezel { padding: 8px 12px; }
-.rg-atlas-bezel .rg-bezel-title { letter-spacing: 0.06em; }
-.rg-atlas-bezel .rg-bezel-meta { margin-left: auto; flex: 0 0 auto; font-size: 0.7em; letter-spacing: 0.12em; color: var(--rg-muted); white-space: nowrap; }
-.rg-atlas-systems-back { font-size: 0.7em; letter-spacing: 0.1em; color: var(--rg-muted); cursor: pointer; flex: 0 0 auto; }
-.rg-atlas-systems-back:hover { color: var(--rg-accent); }
-
-/* solar-system structure: faint orbit ring per sun, spokes from each body to what it orbits */
-.rg-atlas-orbit { fill: none; stroke: var(--rg-grid); stroke-width: 1; opacity: 0.35; }
-.rg-atlas-spoke { stroke: var(--rg-line); stroke-width: 1; opacity: 0.18; }
-.rg-atlas-spoke.rg-lit { opacity: 0.7; stroke-width: 1.6; }
-
-/* co-occurrence edges — faint, bridges glow accent (reserved for cross-system links) */
-.rg-atlas-edge { stroke: var(--rg-link); stroke-width: 1; opacity: 0.16; }
-.rg-atlas-edge-bridge { stroke: var(--rg-accent); stroke-width: 1.4; opacity: 0.4; stroke-dasharray: 4 3; }
-.rg-atlas-edge.rg-lit { opacity: 0.85; stroke-width: 1.8; }
-
-/* core */
-.rg-atlas-core-label { fill: var(--rg-accent); font-size: 17px; font-weight: 600; letter-spacing: 0.14em; pointer-events: none; }
-.rg-atlas-core-sub { fill: var(--rg-muted); font-size: 12px; letter-spacing: 0.08em; pointer-events: none; }
-
-/* facet nodes */
-.rg-atlas-dot { fill: var(--rg-ink); stroke: var(--rg-bg); stroke-width: 1.5; transition: fill 0.15s ease; }
-.rg-hub .rg-atlas-dot { fill: var(--rg-accent); }
-.rg-bridge .rg-atlas-dot { fill: var(--rg-accent); }
-.rg-phantom-facet .rg-atlas-dot { fill: var(--text-normal, #fff); stroke: none; }
-.rg-bridge-halo { fill: none; stroke: var(--rg-accent); stroke-width: 1.3; opacity: 0.55; }
-.rg-atlas-facet.rg-sel .rg-atlas-dot { stroke: var(--rg-accent); stroke-width: 2.5; }
-
-/* labels — only hubs/bridges/selected by default; the rest on hover */
-.rg-atlas-label { font-size: 14px; opacity: 0; pointer-events: none; }
-.rg-hub .rg-atlas-label,
-.rg-bridge .rg-atlas-label,
-.rg-atlas-facet.rg-sel .rg-atlas-label { opacity: 1; }
-.rg-atlas-facet:hover .rg-atlas-label,
-.rg-atlas-facet:focus-visible .rg-atlas-label { opacity: 1; }
-
-/* spotlight — dim the field, light the hovered facet + neighbours */
-.rg-atlas-galaxy.rg-spotlight .rg-atlas-facet { opacity: 0.18; transition: opacity 0.15s ease; }
-.rg-atlas-galaxy.rg-spotlight .rg-atlas-facet.rg-on { opacity: 1; }
-.rg-atlas-galaxy.rg-spotlight .rg-atlas-facet.rg-on .rg-atlas-label { opacity: 1; }
-.rg-atlas-galaxy.rg-spotlight .rg-atlas-edge { opacity: 0.04; }
-
-/* controls bar under the constellation */
-.rg-atlas-controls {
-  position: absolute;
-  left: 12px;
-  bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--rg-panel) 80%, transparent);
-  border: 1px solid var(--rg-grid);
-  border-radius: 6px;
-  font-size: 0.82em;
-}
-.rg-bridge-legend.is-active { color: var(--rg-accent); text-decoration: none; }
-.rg-bridge-legend .rg-glyph { color: var(--rg-accent); }
-.rg-atlas-slider { display: flex; align-items: center; gap: 6px; }
-.rg-atlas-slider-label { color: var(--rg-muted); white-space: nowrap; }
-.rg-atlas-slider input { width: 90px; accent-color: var(--rg-accent); }
-
-/* detail / summary panel */
-.rg-atlas-detail {
-  flex: 0 0 320px;
-  overflow-y: auto;
-  padding: 16px 14px;
-  border-left: 1px solid var(--rg-grid);
-  background: var(--rg-panel);
-}
-.rg-atlas-back { color: var(--rg-muted); cursor: pointer; font-size: 0.82em; margin-bottom: 8px; }
-.rg-atlas-back:hover { color: var(--rg-accent); }
-.rg-atlas-head { margin-bottom: 14px; }
-.rg-atlas-title { font-size: 1.1em; font-weight: 600; letter-spacing: 0.06em; color: var(--rg-ink); }
-.rg-atlas-meta { color: var(--rg-muted); font-size: 0.82em; margin-top: 3px; }
-.rg-atlas-badges { display: flex; gap: 5px; margin-top: 6px; }
-.rg-atlas-badge { font-size: 0.66em; letter-spacing: 0.1em; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
-.rg-atlas-badge.rg-hub, .rg-atlas-badge.rg-bridge { color: var(--rg-accent); }
-.rg-atlas-badge.rg-phantom-facet { color: var(--text-normal, #fff); }
-
-.rg-atlas-section { margin-bottom: 16px; }
-.rg-atlas-section-title { font-size: 0.72em; letter-spacing: 0.14em; color: var(--rg-muted); margin-bottom: 2px; }
-.rg-atlas-section-sub { font-size: 0.74em; color: var(--rg-muted); opacity: 0.75; margin-bottom: 7px; }
-.rg-atlas-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.rg-atlas-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
-  border: 1px solid var(--rg-grid);
-  border-radius: 4px;
-  font-size: 0.82em;
-  cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease;
-}
-.rg-atlas-chip:hover { border-color: var(--rg-accent); color: var(--rg-accent); }
-.rg-atlas-chip.rg-hub { border-color: color-mix(in srgb, var(--rg-accent) 50%, var(--rg-grid)); }
-.rg-atlas-chip.rg-bridge { border-style: dashed; border-color: var(--rg-accent); }
-.rg-atlas-chip.rg-phantom-facet { color: var(--text-normal, #fff); }
-.rg-atlas-chip-df { color: var(--rg-muted); font-size: 0.85em; }
-.rg-atlas-note {
-  padding: 3px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.86em;
-  color: var(--rg-ink);
-}
-.rg-atlas-note:hover { background: var(--background-modifier-hover); color: var(--rg-accent); }

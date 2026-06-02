@@ -5,7 +5,7 @@ import { BreadcrumbTrail, installKeyboardNav } from "./interaction.ts";
 import { applyRemediation, remediationActions, type RemediationAction } from "./remediation.ts";
 import { NotePickerModal } from "./notePicker.ts";
 
-export const RHIZONE_VIEW_TYPE = "rhizone-graph-scope";
+export const RETICULAR_VIEW_TYPE = "reticular-scope";
 
 const VIEW = 1040; // SVG viewBox is VIEW×VIEW; CSS scales it to the pane (rings stay fixed → room for the ghost perimeter ring)
 const TOP_OUTER = 10;
@@ -60,7 +60,7 @@ export interface ScopeHost {
   readonly previewOwner: Component;
 }
 
-export class RhizoneView extends ItemView {
+export class ReticularView extends ItemView {
   private host: ScopeHost;
   private trail: BreadcrumbTrail | null = null;
   private focusPath = "";
@@ -81,7 +81,7 @@ export class RhizoneView extends ItemView {
     edgeEls: Array<{ a: string; b: string; els: SVGElement[] }>;
     adj: Map<string, Set<string>>;
   } | null = null; // spotlight wiring for hover-dimming
-  private _lastScore = 0; // last rhizonicity shown (so the count-up eases from it)
+  private _lastScore = 0; // last reticularity shown (so the count-up eases from it)
   private _scoreRaf = 0;
   private _hoverTimer = 0; // debounce for hover → companion inspect
 
@@ -91,17 +91,17 @@ export class RhizoneView extends ItemView {
   }
 
   getViewType(): string {
-    return RHIZONE_VIEW_TYPE;
+    return RETICULAR_VIEW_TYPE;
   }
   getDisplayText(): string {
-    return this.focusPath ? `Scope · ${baseOf(this.focusPath)}` : "Rhizone Graph";
+    return this.focusPath ? `Scope · ${baseOf(this.focusPath)}` : "Reticular Graph";
   }
   getIcon(): string {
     return "radar";
   }
 
   async onOpen(): Promise<void> {
-    this.contentEl.addClass("rhizone-graph");
+    this.contentEl.addClass("reticular-graph");
     const active = this.host.activePath();
     if (active) this.setFocus(active);
     else this.render();
@@ -181,7 +181,7 @@ export class RhizoneView extends ItemView {
     const root = this.contentEl;
     root.empty();
     if (!this.focusPath) {
-      root.createDiv({ cls: "rg-empty", text: "Open a note, then run “Open in Rhizone Graph”." });
+      root.createDiv({ cls: "rg-empty", text: "Open a note, then run “Open in Reticular Graph”." });
       return;
     }
 
@@ -190,7 +190,7 @@ export class RhizoneView extends ItemView {
 
     // ── bezel header + breadcrumb ──────────────────────────────────────────
     const header = root.createDiv({ cls: "rg-bezel" });
-    header.createSpan({ cls: "rg-bezel-tag", text: "RHIZONE" });
+    header.createSpan({ cls: "rg-bezel-tag", text: "RETICULAR" });
     header.createSpan({ cls: "rg-bezel-title", text: baseOf(this.focusPath) });
     const pin = header.createSpan({
       cls: "rg-pin" + (this.pinned ? " is-pinned" : ""),
@@ -381,16 +381,16 @@ export class RhizoneView extends ItemView {
       });
     }
 
-    // ── focus core + rhizonicity score (★) — rarity-weighted richness of this note's own web ──
+    // ── focus core + reticularity score (★) — rarity-weighted richness of this note's own web ──
     const scored = [...web.inner, ...web.outer];
     const retRaw = scored.reduce(
       (s, c) => s + c.weight + (c.state === "connected" ? 0.5 : c.state === "mentioned" ? 0.25 : 0),
       0
     );
-    const rhizonicity = Math.round(retRaw * 10);
+    const reticularity = Math.round(retRaw * 10);
     pan.createSvg("circle", { cls: "rg-core-disc", attr: { cx, cy, r: 34 } });
     const scoreEl = pan.createSvg("text", { cls: "rg-score", attr: { x: cx, y: cy + 8, "text-anchor": "middle" } });
-    this.tweenScore(scoreEl, rhizonicity);
+    this.tweenScore(scoreEl, reticularity);
 
     // ── bottom-right: how influential this note is to the vault ──────────────
     // A composite, not just a backlink count: notes that cite it (direct dependents) weigh most,
@@ -534,7 +534,7 @@ export class RhizoneView extends ItemView {
 
     if (this.showControls) this.renderControls(root);
     } catch (e) {
-      root.createDiv({ cls: "rg-error" }).setText("Rhizone Graph render error:\n" + String((e as Error)?.stack ?? e));
+      root.createDiv({ cls: "rg-error" }).setText("Reticular Graph render error:\n" + String((e as Error)?.stack ?? e));
     }
   }
 
@@ -710,7 +710,7 @@ export class RhizoneView extends ItemView {
       g.addEventListener("mouseover", (ev) => {
         this.host.app.workspace.trigger("hover-link", {
           event: ev,
-          source: "rhizone-graph",
+          source: "reticular-graph",
           hoverParent: this,
           targetEl: g,
           linktext: c.basename,

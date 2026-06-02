@@ -1,13 +1,11 @@
 import { MarkdownView, Plugin, TFile, debounce, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 import { FacetIndex } from "./src/engine/index.ts";
 import { buildLocalWeb, neighborEdges, phantomFacets, type PhantomFacet } from "./src/engine/cocitation.ts";
-import { buildAtlas as buildFacetAtlas, type FacetAtlas } from "./src/engine/atlas.ts";
 import type { LocalWeb, NodeState } from "./src/engine/types.ts";
 import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
 import { forge } from "./src/obsidian/connections.ts";
-import { RhizoneView, RHIZONE_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
-import { RhizoneNoteView, RHIZONE_NOTE_VIEW_TYPE } from "./src/view/notePanel.ts";
-import { RhizoneAtlasView, RHIZONE_ATLAS_VIEW_TYPE, type AtlasHost } from "./src/view/atlasView.ts";
+import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
+import { ReticularNoteView, RETICULAR_NOTE_VIEW_TYPE } from "./src/view/notePanel.ts";
 
 interface RGSettings {
   /** per-state label zoom thresholds, 0 (always) .. 100 (only when fully zoomed in) */
@@ -25,7 +23,7 @@ const DEFAULT_SETTINGS: RGSettings = {
   showPhantom: false
 };
 
-export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, AtlasHost {
+export default class RhizoneGraphPlugin extends Plugin implements ScopeHost {
   private index = new FacetIndex();
   private indexBuilt = false;
   private _settings: RGSettings = DEFAULT_SETTINGS;
@@ -55,13 +53,12 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Atl
       showPhantom: saved?.showPhantom ?? DEFAULT_SETTINGS.showPhantom
     };
 
-    this.registerView(RHIZONE_VIEW_TYPE, (leaf: WorkspaceLeaf) => new RhizoneView(leaf, this));
-    this.registerView(RHIZONE_NOTE_VIEW_TYPE, (leaf: WorkspaceLeaf) => new RhizoneNoteView(leaf, this));
-    this.registerView(RHIZONE_ATLAS_VIEW_TYPE, (leaf: WorkspaceLeaf) => new RhizoneAtlasView(leaf, this));
+    this.registerView(RETICULAR_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularView(leaf, this));
+    this.registerView(RETICULAR_NOTE_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularNoteView(leaf, this));
 
     this.addCommand({
       id: "open-scope",
-      name: "Open in Rhizone Graph",
+      name: "Open in Reticular Graph",
       checkCallback: (checking: boolean) => {
         const file = this.app.workspace.getActiveFile();
         if (!file || file.extension !== "md") return false;
@@ -71,27 +68,21 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Atl
     });
     this.addCommand({
       id: "open-note-panel",
-      name: "Open Rhizone Note panel",
+      name: "Open Reticular Note panel",
       callback: () => void this.openNotePanel()
     });
-    this.addCommand({
-      id: "open-facet-atlas",
-      name: "Open Facet Atlas",
-      callback: () => void this.openAtlas()
-    });
 
-    this.addRibbonIcon("radar", "Open in Rhizone Graph", () => {
+    this.addRibbonIcon("radar", "Open in Reticular Graph", () => {
       const file = this.app.workspace.getActiveFile();
       if (file && file.extension === "md") void this.openInScope(file.path);
     });
-    this.addRibbonIcon("orbit", "Open Facet Atlas", () => void this.openAtlas());
 
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
         menu.addItem((item) =>
           item
-            .setTitle("Open in Rhizone Graph")
+            .setTitle("Open in Reticular Graph")
             .setIcon("radar")
             .onClick(() => void this.openInScope(file.path))
         );
@@ -104,7 +95,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Atl
         if (!file || file.extension !== "md") return;
         menu.addItem((item) =>
           item
-            .setTitle("Open in Rhizone Graph")
+            .setTitle("Open in Reticular Graph")
             .setIcon("radar")
             .onClick(() => void this.openInScope(file.path))
         );
@@ -154,12 +145,6 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Atl
   getLocalWeb(focusPath: string): LocalWeb {
     this.ensureIndex();
     return buildLocalWeb(focusPath, this.index);
-  }
-
-  /** Whole-vault facet graph for the Atlas. */
-  buildAtlas(): FacetAtlas {
-    this.ensureIndex();
-    return buildFacetAtlas(this.index);
   }
 
   neighborEdges(paths: string[]): Array<[string, string]> {
@@ -272,62 +257,44 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Atl
   // ── view plumbing ──────────────────────────────────────────────────────────
   // NB: filter by instanceof — background tabs hold *deferred* placeholder views
   // (Obsidian ≥1.7) that lack our methods; skip them rather than crash on followActive/refresh.
-  private getScopeViews(): RhizoneView[] {
+  private getScopeViews(): ReticularView[] {
     return this.app.workspace
-      .getLeavesOfType(RHIZONE_VIEW_TYPE)
+      .getLeavesOfType(RETICULAR_VIEW_TYPE)
       .map((l) => l.view)
-      .filter((v): v is RhizoneView => v instanceof RhizoneView);
+      .filter((v): v is ReticularView => v instanceof ReticularView);
   }
 
-  private getNoteViews(): RhizoneNoteView[] {
+  private getNoteViews(): ReticularNoteView[] {
     return this.app.workspace
-      .getLeavesOfType(RHIZONE_NOTE_VIEW_TYPE)
+      .getLeavesOfType(RETICULAR_NOTE_VIEW_TYPE)
       .map((l) => l.view)
-      .filter((v): v is RhizoneNoteView => v instanceof RhizoneNoteView);
-  }
-
-  private getAtlasViews(): RhizoneAtlasView[] {
-    return this.app.workspace
-      .getLeavesOfType(RHIZONE_ATLAS_VIEW_TYPE)
-      .map((l) => l.view)
-      .filter((v): v is RhizoneAtlasView => v instanceof RhizoneAtlasView);
+      .filter((v): v is ReticularNoteView => v instanceof ReticularNoteView);
   }
 
   private refreshView(): void {
     for (const v of this.getScopeViews()) v.refresh();
-    for (const v of this.getAtlasViews()) v.refresh();
   }
 
   async openInScope(path: string): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(RHIZONE_VIEW_TYPE)[0];
+    let leaf = this.app.workspace.getLeavesOfType(RETICULAR_VIEW_TYPE)[0];
     if (!leaf) {
       leaf = this.app.workspace.getRightLeaf(false)!;
-      await leaf.setViewState({ type: RHIZONE_VIEW_TYPE, active: true });
+      await leaf.setViewState({ type: RETICULAR_VIEW_TYPE, active: true });
     }
     this.app.workspace.revealLeaf(leaf);
-    (leaf.view as RhizoneView).setFocus(path);
-  }
-
-  /** Open (or reveal) the Facet Atlas in a main-area tab. */
-  private async openAtlas(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(RHIZONE_ATLAS_VIEW_TYPE)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getLeaf("tab");
-      await leaf.setViewState({ type: RHIZONE_ATLAS_VIEW_TYPE, active: true });
-    }
-    this.app.workspace.revealLeaf(leaf);
+    (leaf.view as ReticularView).setFocus(path);
   }
 
   private async openNotePanel(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(RHIZONE_NOTE_VIEW_TYPE)[0];
+    let leaf = this.app.workspace.getLeavesOfType(RETICULAR_NOTE_VIEW_TYPE)[0];
     if (!leaf) {
       leaf = this.app.workspace.getRightLeaf(true)!;
-      await leaf.setViewState({ type: RHIZONE_NOTE_VIEW_TYPE, active: true });
+      await leaf.setViewState({ type: RETICULAR_NOTE_VIEW_TYPE, active: true });
     }
     this.app.workspace.revealLeaf(leaf);
     // Mirror whatever the galaxy is focused on (fall back to the active note).
-    const scope = this.app.workspace.getLeavesOfType(RHIZONE_VIEW_TYPE)[0];
-    const focus = (scope?.view as RhizoneView | undefined)?.currentFocus() ?? this.activePath();
-    if (focus) void (leaf.view as RhizoneNoteView).update(focus, [focus]);
+    const scope = this.app.workspace.getLeavesOfType(RETICULAR_VIEW_TYPE)[0];
+    const focus = (scope?.view as ReticularView | undefined)?.currentFocus() ?? this.activePath();
+    if (focus) void (leaf.view as ReticularNoteView).update(focus, [focus]);
   }
 }

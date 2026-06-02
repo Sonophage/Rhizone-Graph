@@ -5,7 +5,7 @@ import type { LocalWeb, NodeState } from "./src/engine/types.ts";
 import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
 import { forge } from "./src/obsidian/connections.ts";
 import { buildTree as computeTree, type Tree } from "./src/engine/tree.ts";
-import { buildFacetGraph, type FacetGraph } from "./src/engine/facetGraph.ts";
+import { buildFacetGraph, detectCommunities, isContentTitle, type FacetGraph } from "./src/engine/facetGraph.ts";
 import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
 import { RhizoneFacetView, RHIZONE_FACET_VIEW_TYPE, type RhizoneHost } from "./src/view/rhizoneView.ts";
 
@@ -170,6 +170,56 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return [...this.index.notesWithFacet(key)]
       .map((p) => ({ path: p, basename: this.index.get(p)?.basename ?? p }))
       .sort((a, b) => a.basename.localeCompare(b.basename));
+  }
+
+  /** Every note in the vault (the ever-present galaxy ring). */
+  allNotes(): { path: string; basename: string }[] {
+    this.ensureIndex();
+    return [...this.index.all()].map((r) => ({ path: r.path, basename: r.basename }));
+  }
+
+  /** A note's facet keys (to seed the rhizome from a note keystone). */
+  noteFacets(path: string): string[] {
+    this.ensureIndex();
+    return this.index.get(path)?.facetKeys ?? [];
+  }
+
+  /** Notes sharing any of `facetKeys`, ranked rarity-first (rarest shared facet wins). */
+  relatedNotes(facetKeys: string[], exclude?: string): { path: string; basename: string; rarestDf: number }[] {
+    this.ensureIndex();
+    const rarest = new Map<string, number>(); // path → df of the rarest facet it shares
+    for (const key of new Set(facetKeys)) {
+      if (isContentTitle(key)) continue;
+      const df = this.index.df(key);
+      for (const p of this.index.notesWithFacet(key)) {
+        if (p === exclude) continue;
+        const cur = rarest.get(p);
+        if (cur === undefined || df < cur) rarest.set(p, df);
+      }
+    }
+    return [...rarest]
+      .map(([path, rarestDf]) => ({ path, basename: this.index.get(path)?.basename ?? path, rarestDf }))
+      .sort((a, b) => a.rarestDf - b.rarestDf || a.basename.localeCompare(b.basename));
+  }
+
+  /** Each note's cluster = the facet-community most represented among its facets. */
+  noteClusters(): Record<string, string> {
+    this.ensureIndex();
+    const labels = detectCommunities(buildFacetGraph(this.index));
+    const out: Record<string, string> = {};
+    for (const r of this.index.all()) {
+      const tally = new Map<string, number>();
+      for (const k of r.facetKeys) {
+        if (isContentTitle(k)) continue;
+        const lbl = labels.get(k);
+        if (lbl) tally.set(lbl, (tally.get(lbl) ?? 0) + 1);
+      }
+      let best = "";
+      let bestN = 0;
+      for (const [lbl, n] of tally) if (n > bestN || (n === bestN && lbl < best)) ((best = lbl), (bestN = n));
+      out[r.path] = best || "~"; // "~" sorts last → the unclustered drift to the end
+    }
+    return out;
   }
 
   neighborEdges(paths: string[]): Array<[string, string]> {

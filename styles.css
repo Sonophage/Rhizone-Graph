@@ -910,6 +910,58 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 /* ── perspectival rhizome ── */
 .rg-rz-back { cursor: pointer; color: var(--rg-muted); font-size: 0.8em; letter-spacing: 0.08em; margin-right: 4px; }
 .rg-rz-back:hover { color: var(--rg-accent); }
+.rg-rz-back.is-hidden { display: none; }
+
+/* ── the focus+context galaxy ── */
+.rg-gx { cursor: grab; }
+.rg-gx.rg-grabbing { cursor: grabbing; }
+.rg-gx-order {
+  flex: 0 0 auto;
+  cursor: pointer;
+  font-size: 0.62em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rg-muted);
+  border: 1px solid var(--rg-grid);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-left: auto;
+}
+.rg-gx-order:hover { color: var(--rg-accent); border-color: var(--rg-accent); }
+
+.rg-gx-note { cursor: pointer; }
+.rg-anim .rg-gx-note { transition: transform 600ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 360ms ease; }
+.rg-gx-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; }
+.rg-gx-label {
+  fill: var(--text-normal, #fff);
+  font-family: var(--font-monospace, monospace);
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+}
+.rg-gx-note:hover .rg-gx-label,
+.rg-gx-note.rg-related .rg-gx-label,
+.rg-gx-note.rg-keystone .rg-gx-label { opacity: 1; }
+.rg-gx-note.rg-dim { opacity: 0.28; }
+.rg-gx-note.rg-dim:hover { opacity: 0.7; }
+.rg-gx-note.rg-related .rg-gx-dot { fill: var(--rg-accent); }
+.rg-gx-note.rg-keystone .rg-gx-dot {
+  fill: var(--rg-accent);
+  stroke: var(--text-normal, #fff);
+  stroke-width: 2;
+  transform: scale(2.6);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.rg-anim .rg-gx-note.rg-keystone .rg-gx-dot { filter: drop-shadow(0 0 9px var(--rg-accent)); }
+.rg-gx-center-label {
+  fill: var(--rg-accent);
+  font-family: var(--font-monospace, monospace);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
 /* rhizome: white nodes too; the seed (you are here) is distinguished by size + an accent ring */
 .rg-rz-seed .rg-tree-dot { fill: var(--text-normal, #fff); stroke: var(--rg-accent); stroke-width: 3; }
 .rg-anim .rg-rz-seed .rg-tree-dot { filter: drop-shadow(0 0 10px var(--rg-accent)); }

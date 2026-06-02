@@ -1,56 +1,61 @@
 import { ItemView, type WorkspaceLeaf, type App } from "obsidian";
-import { DAATH, type Tree, type Gateway } from "../engine/tree.ts";
-import { neighborhood, rarityAltitude, type FacetGraph, type Neighbor } from "../engine/facetGraph.ts";
+import type { Tree } from "../engine/tree.ts";
+import type { FacetGraph } from "../engine/facetGraph.ts";
 
 export const RHIZONE_FACET_VIEW_TYPE = "rhizone-facet";
 
-const W = 1000;
-const H = 1000;
-const PADX = 120; // room for side-pillar labels
-const PADY = 78;
+const VIEW = 1400; // viewBox VIEW×VIEW; CSS scales to the pane, pan/zoom via the transform group
+const C = VIEW / 2;
+const R_OUT = 580; // the ever-present outer ring of all notes
+const R_IN = 250; // the tight inner ring of notes summoned by the keystone
+const INNER_CAP = 30; // most related notes pulled inward at once
+const DOT = 5;
 
-/** What the Rhizone view needs from the plugin — kept narrow to avoid a circular import. */
+/** What the Rhizone view needs from the plugin. */
 export interface RhizoneHost {
   app: App;
-  /** Whole-vault facet model as the Ten Gateways (Etz Chaim). */
+  /** Whole-vault facet model as the Ten Gateways (Etz Chaim) — used by the local-tree slice. */
   buildTree(): Tree;
-  /** The whole-vault facet graph (for the perspectival rhizome). */
+  /** The whole-vault facet graph. */
   facetGraph(): FacetGraph;
-  /** Notes citing a facet — the doors that bloom from it. */
+  /** Notes citing a facet. */
   notesForFacet(key: string): { path: string; basename: string }[];
+  /** Every note in the vault (the ambient galaxy ring). */
+  allNotes(): { path: string; basename: string }[];
+  /** A note's facet keys (to seed from a note keystone). */
+  noteFacets(path: string): string[];
+  /** Notes sharing any of `facetKeys`, rarity-ranked. */
+  relatedNotes(facetKeys: string[], exclude?: string): { path: string; basename: string; rarestDf: number }[];
+  /** path → facet-community label (for cluster ordering). */
+  noteClusters(): Record<string, string>;
   /** Run motion, overriding OS reduce-motion (persisted, shared with the Scope). */
   animations(): boolean;
 }
 
-const ROLE_CLASS: Record<Gateway["role"], string> = {
-  bridge: "rg-gate-bridge",
-  ground: "rg-gate-ground",
-  "community-a": "rg-gate-a",
-  "community-b": "rg-gate-b"
-};
-
-/** Functional captions — each slot announces its job. ▸ = right community, ◂ = left (per the header). */
-const CAPTION: Record<string, string> = {
-  Kether: "Rarest bridge",
-  Tiphereth: "Keystone",
-  Yesod: "Lesser bridge",
-  Malkuth: "Common ground",
-  Chokmah: "▸ signature",
-  Chesed: "▸ mainstay",
-  Netzach: "▸ face",
-  Binah: "◂ signature",
-  Geburah: "◂ mainstay",
-  Hod: "◂ face"
-};
+interface NoteRef {
+  path: string;
+  basename: string;
+}
 
 /**
- * Rhizone — the tourist's view. PHASE 2: the cold-open frontispiece only — the whole vault
- * rendered as the Ten Gateways (Etz Chaim), altitude = rarity. Static for now; entering a
- * gateway into the perspectival rhizome comes in a later phase.
+ * Rhizone — the focus+context galaxy. Every note sits on an ever-present outer ring; the centre is
+ * empty until you summon a keystone. Picking a note flies it to the centre and slides the notes that
+ * share a rare facet into a tight inner ring; everything else stays out on the far circle. Pan/zoom
+ * to roam. (Local Etz Chaim around the keystone + search are later slices.)
  */
 export class RhizoneFacetView extends ItemView {
   private host: RhizoneHost;
-  private seed: string | null = null; // null = Ten Gateways; a facet key = perspectival rhizome
+  private keystone: string | null = null; // a note path; null = ambient
+  private order: "cluster" | "alpha" = "cluster";
+  private vt = { z: 1, tx: 0, ty: 0 };
+
+  private notes: NoteRef[] = [];
+  private clusters: Record<string, string> = {};
+  private _noteEls = new Map<string, SVGGElement>();
+  private _pan: SVGElement | null = null;
+  private _centerEl: SVGElement | null = null;
+  private _titleEl: HTMLElement | null = null;
+  private _releaseEl: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, host: RhizoneHost) {
     super(leaf);
@@ -69,231 +74,75 @@ export class RhizoneFacetView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.contentEl.addClass("rhizone-facet");
-    this.render();
+    this.build();
   }
 
-  /** Re-render (e.g. after the index changes). */
+  /** Rebuild from scratch (open / index change). */
   refresh(): void {
-    this.render();
+    this.build();
   }
 
-  private render(): void {
+  // ── one-time(ish) build of the whole field ──
+  private build(): void {
     const root = this.contentEl;
     root.empty();
     root.toggleClass("rg-anim", this.host.animations());
-    if (this.seed) {
-      this.renderRhizome(root, this.seed);
-      return;
-    }
-    this.renderGateways(root);
-  }
+    this._noteEls.clear();
+    this._centerEl = null;
 
-  /** Enter a gateway → the perspectival rhizome seeded from that facet. */
-  private enter(key: string): void {
-    this.seed = key;
-    this.render();
-  }
-  /** Leave the rhizome → back to the Ten Gateways frontispiece. */
-  private exit(): void {
-    this.seed = null;
-    this.render();
-  }
-
-  private renderGateways(root: HTMLElement): void {
-    let tree: Tree;
     try {
-      tree = this.host.buildTree();
+      this.notes = this.host.allNotes();
+      this.clusters = this.order === "cluster" ? this.host.noteClusters() : {};
     } catch (e) {
-      root.createDiv({ cls: "rg-error" }).setText("Rhizone render error:\n" + String((e as Error)?.stack ?? e));
+      root.createDiv({ cls: "rg-error" }).setText("Rhizone error:\n" + String((e as Error)?.stack ?? e));
       return;
     }
 
-    // ── header bezel ──
+    // ── bezel: tag · title · order toggle · release ──
     const bezel = root.createDiv({ cls: "rg-bezel" });
     bezel.createSpan({ cls: "rg-bezel-tag", text: "RHIZONE" });
-    bezel.createSpan({ cls: "rg-bezel-title", text: "The Ten Gateways" });
-    const meta = bezel.createSpan({ cls: "rg-tree-meta" });
-    if (tree.communityA) meta.createSpan({ cls: "rg-tree-meta-r", text: `▸ ${labelOf(tree.communityA)}` });
-    if (tree.communityB) meta.createSpan({ cls: "rg-tree-meta-l", text: `◂ ${labelOf(tree.communityB)}` });
+    this._titleEl = bezel.createSpan({ cls: "rg-bezel-title" });
+    const orderBtn = bezel.createSpan({
+      cls: "rg-gx-order",
+      attr: { role: "button", "aria-label": "Toggle ring order" }
+    });
+    orderBtn.setText(this.order === "cluster" ? "clusters" : "a–z");
+    orderBtn.onClickEvent(() => {
+      this.order = this.order === "cluster" ? "alpha" : "cluster";
+      orderBtn.setText(this.order === "cluster" ? "clusters" : "a–z");
+      if (this.order === "cluster" && !Object.keys(this.clusters).length) this.clusters = this.host.noteClusters();
+      this.layout();
+    });
+    this._releaseEl = bezel.createSpan({ cls: "rg-rz-back", text: "‹ release", attr: { role: "button" } });
+    this._releaseEl.onClickEvent(() => this.release());
 
     // ── stage / svg ──
     const stage = root.createDiv({ cls: "rg-tree-stage" });
     const svg = stage.createSvg("svg", {
-      cls: "rg-tree",
-      attr: { viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": "The vault as the Ten Gateways" }
+      cls: ["rg-tree", "rg-gx"],
+      attr: { viewBox: `0 0 ${VIEW} ${VIEW}`, role: "group", "aria-label": "The vault as a galaxy of notes" }
     });
-
-    try {
-      this.drawAxis(svg);
-      this.drawPaths(svg, tree);
-      this.drawDaath(svg, tree);
-      for (const gw of tree.gateways) this.drawGateway(svg, gw);
-    } catch (e) {
-      root.createDiv({ cls: "rg-error" }).setText("Rhizone draw error:\n" + String((e as Error)?.stack ?? e));
-      return;
-    }
-
-    // ── legend ──
-    const legend = root.createDiv({ cls: "rg-tree-legend" });
-    legendChip(legend, "rg-gate-bridge", "bridges — rare connectors");
-    legendChip(legend, "rg-gate-a", tree.communityA ? `▸ ${labelOf(tree.communityA)}` : "▸ right community");
-    legendChip(legend, "rg-gate-b", tree.communityB ? `◂ ${labelOf(tree.communityB)}` : "◂ left community");
-    legendChip(legend, "rg-gate-ground", "Malkuth — common ground");
-    legendChip(legend, "rg-gate-daath", "Da'ath — phantoms");
-  }
-
-  /** Faint rarity axis: rare at the crown, common at the floor. */
-  private drawAxis(svg: SVGElement): void {
-    const g = svg.createSvg("g", { cls: "rg-tree-axis" });
-    for (const y of [0.05, 0.17, 0.4, 0.52, 0.72, 0.84, 0.97]) {
-      const py = mapY(y);
-      g.createSvg("line", { cls: "rg-tree-floor", attr: { x1: 40, y1: py, x2: W - 40, y2: py } });
-    }
-    g.createSvg("text", { cls: ["rg-tree-axis-label"], attr: { x: 30, y: mapY(0.05) - 6, "text-anchor": "start" } }).setText("RARE ↑");
-    g.createSvg("text", { cls: ["rg-tree-axis-label"], attr: { x: 30, y: mapY(0.97) + 22, "text-anchor": "start" } }).setText("COMMON ↓");
-  }
-
-  private drawPaths(svg: SVGElement, tree: Tree): void {
-    const pos = gatewayPositions(tree);
-    const g = svg.createSvg("g", { cls: "rg-tree-paths" });
-    for (const p of tree.paths) {
-      const a = pos.get(p.from);
-      const b = pos.get(p.to);
-      if (!a || !b) continue;
-      const line = g.createSvg("line", { cls: "rg-tree-path", attr: { x1: a.x, y1: a.y, x2: b.x, y2: b.y } });
-      line.style.setProperty("--rg-path-strength", String(0.12 + p.affinity * 0.55));
-    }
-  }
-
-  private drawDaath(svg: SVGElement, tree: Tree): void {
-    const px = mapX(DAATH.x);
-    const py = mapY(DAATH.y);
-    const g = svg.createSvg("g", { cls: ["rg-tree-gate", "rg-gate-daath"] });
-    g.createSvg("circle", { cls: ["rg-tree-dot"], attr: { cx: px, cy: py, r: 15 } });
-    g.createSvg("text", { cls: ["rg-tree-sephira"], attr: { x: px, y: py - 24, "text-anchor": "middle" } }).setText("Phantoms");
-    const n = tree.daath.length;
-    g.createSvg("text", { cls: ["rg-tree-label"], attr: { x: px, y: py + 34, "text-anchor": "middle" } }).setText(n ? String(n) : "");
-    if (n) g.setAttribute("aria-label", "Da'ath — " + tree.daath.slice(0, 6).map((f) => f.label).join(", "));
-  }
-
-  private drawGateway(svg: SVGElement, gw: Gateway): void {
-    const px = mapX(gw.x);
-    const py = mapY(gw.y);
-    const g = svg.createSvg("g", { cls: ["rg-tree-gate", ROLE_CLASS[gw.role]] });
-    g.createSvg("text", { cls: ["rg-tree-sephira"], attr: { x: px, y: py - radius(gw) - 10, "text-anchor": "middle" } }).setText(CAPTION[gw.name] ?? gw.name);
-
-    if (!gw.facet) {
-      g.addClass("rg-gate-empty");
-      g.createSvg("circle", { cls: ["rg-tree-dot"], attr: { cx: px, cy: py, r: 11 } });
-      return;
-    }
-    g.createSvg("circle", { cls: ["rg-tree-dot"], attr: { cx: px, cy: py, r: radius(gw) } });
-    g.createSvg("text", { cls: ["rg-tree-label"], attr: { x: px, y: py + radius(gw) + 22, "text-anchor": "middle" } }).setText(
-      trunc(displayLabel(gw.facet.label), 26)
-    );
-    g.createSvg("text", { cls: ["rg-tree-df"], attr: { x: px, y: py + radius(gw) + 40, "text-anchor": "middle" } }).setText(
-      `df ${gw.facet.df}`
-    );
-    g.setAttribute("aria-label", `${gw.name}: ${gw.facet.label} (df ${gw.facet.df}, ${gw.role}) — click to enter`);
-    g.addClass("rg-gate-enterable");
-    const key = gw.facet.key;
-    g.addEventListener("click", () => this.enter(key));
-  }
-
-  // ── the perspectival rhizome: seeded from one facet, gravity-placed, altitude = rarity ──
-  private renderRhizome(root: HTMLElement, seedKey: string): void {
-    let g: FacetGraph;
-    try {
-      g = this.host.facetGraph();
-    } catch (e) {
-      root.createDiv({ cls: "rg-error" }).setText("Rhizone render error:\n" + String((e as Error)?.stack ?? e));
-      return;
-    }
-    const seedNode = g.nodes.get(seedKey);
-    const nbrs = neighborhood(g, seedKey, 8);
-    const maxDf = g.maxDf;
-    const seedDf = seedNode?.df ?? 1;
-
-    // ── header: back + seed name ──
-    const bezel = root.createDiv({ cls: "rg-bezel" });
-    const back = bezel.createSpan({ cls: "rg-rz-back", text: "‹ gateways", attr: { role: "button", "aria-label": "Back to the Ten Gateways" } });
-    back.onClickEvent(() => this.exit());
-    bezel.createSpan({ cls: "rg-bezel-tag", text: "RHIZONE" });
-    bezel.createSpan({ cls: "rg-bezel-title", text: displayLabel(seedNode?.label ?? seedKey) });
-
-    const stage = root.createDiv({ cls: "rg-tree-stage" });
-    const svg = stage.createSvg("svg", {
-      cls: ["rg-tree", "rg-rz"],
-      attr: { viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": `Rhizome around ${seedKey}` }
+    svg.addEventListener("click", (e) => {
+      if (e.target === svg) this.release(); // click the void → let go
     });
-    this.drawAxis(svg);
+    const pan = svg.createSvg("g", { cls: "rg-gx-pan" });
+    this._pan = pan;
+    this.attachPanZoom(svg);
 
-    const sx = mapX(0.5);
-    const sy = mapY(1 - rarityAltitude(seedDf, maxDf));
-    // distinct columns flanking the seed (no centre column, so nothing sits on the seed),
-    // strongest affinity nearest. Y = absolute rarity (rarer = higher); a parity stagger
-    // offsets adjacent columns vertically so same-rarity neighbours never collide.
-    const maxC = Math.max(1, Math.ceil(nbrs.length / 2));
-    const placed = nbrs.map((nb, i) => {
-      const c = i % 2 === 0 ? i / 2 + 1 : -((i + 1) / 2); // +1, -1, +2, -2, …
-      const x = mapX(0.5 + (c / maxC) * 0.42);
-      const y = mapY(1 - rarityAltitude(nb.df, maxDf)) + (Math.abs(c) % 2 === 1 ? 20 : 0);
-      return { nb, x, y };
-    });
-
-    // edges seed → neighbour, brightness by gravity (affinity)
-    const eg = svg.createSvg("g", { cls: "rg-tree-paths" });
-    for (const p of placed) {
-      const line = eg.createSvg("line", { cls: "rg-tree-path", attr: { x1: sx, y1: sy, x2: p.x, y2: p.y } });
-      line.style.setProperty("--rg-path-strength", String(0.12 + p.nb.affinity * 0.7));
-    }
-
-    // doors: the seed's notes bloom in a tight ring around it
-    this.drawDoors(svg, seedKey, sx, sy);
-
-    // neighbour facets (the stairs) — click to climb / re-seed
-    for (const p of placed) this.drawStair(svg, p.nb, p.x, p.y);
-
-    // the seed at the centre
-    const seedG = svg.createSvg("g", { cls: ["rg-rz-seed"] });
-    seedG.createSvg("circle", { cls: ["rg-tree-dot"], attr: { cx: sx, cy: sy, r: 22 } });
-    seedG.createSvg("text", { cls: ["rg-tree-label"], attr: { x: sx, y: sy + 42, "text-anchor": "middle" } }).setText(
-      trunc(displayLabel(seedNode?.label ?? seedKey), 28)
-    );
-    seedG.createSvg("text", { cls: ["rg-tree-df"], attr: { x: sx, y: sy + 60, "text-anchor": "middle" } }).setText(`df ${seedDf}`);
-
-    const legend = root.createDiv({ cls: "rg-tree-legend" });
-    legend.createSpan({ text: "click a facet = climb a stair (re-seed) · click a door = open the note · ↑ rarer  ↓ commoner" });
-  }
-
-  /** A neighbour facet — a stair out of the seed; click to re-seed from it. */
-  private drawStair(svg: SVGElement, nb: Neighbor, x: number, y: number): void {
-    const g = svg.createSvg("g", {
-      cls: ["rg-tree-gate", "rg-rz-stair"],
-      attr: { role: "button", "aria-label": `${nb.label} (df ${nb.df}) — climb` }
-    });
-    const r = 8 + Math.min(12, Math.sqrt(nb.df) * 2.4);
-    g.createSvg("circle", { cls: ["rg-tree-dot"], attr: { cx: x, cy: y, r } });
-    g.createSvg("text", { cls: ["rg-tree-label"], attr: { x, y: y + r + 16, "text-anchor": "middle" } }).setText(
-      trunc(displayLabel(nb.label), 20)
-    );
-    g.addEventListener("click", () => this.enter(nb.key));
-  }
-
-  /** Bloom the seed's notes as door-dots around it; click opens, hover previews. */
-  private drawDoors(svg: SVGElement, seedKey: string, sx: number, sy: number): void {
-    const notes = this.host.notesForFacet(seedKey).slice(0, 8);
-    notes.forEach((n, i) => {
-      const ang = -Math.PI / 2 + (i / Math.max(1, notes.length)) * Math.PI * 2;
-      const dr = 46;
-      const x = sx + Math.cos(ang) * dr;
-      const y = sy + Math.sin(ang) * dr;
-      const g = svg.createSvg("g", { cls: ["rg-rz-door"], attr: { "aria-label": n.basename } });
-      g.createSvg("circle", { cls: ["rg-rz-door-dot"], attr: { cx: x, cy: y, r: 4 } });
-      g.addEventListener("click", () => void this.host.app.workspace.openLinkText(n.basename, ""));
-      g.addEventListener("mouseover", (ev) =>
+    // every note becomes a persistent dot we later slide around
+    for (const n of this.notes) {
+      const g = pan.createSvg("g", { cls: ["rg-gx-note"], attr: { "data-path": n.path, transform: `translate(${C} ${C})` } });
+      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: DOT } });
+      g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
+        trunc(displayLabel(n.basename), 28)
+      );
+      g.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.toggle(n.path);
+      });
+      g.addEventListener("mouseover", (e) =>
         this.host.app.workspace.trigger("hover-link", {
-          event: ev,
+          event: e,
           source: "reticular-graph",
           hoverParent: this,
           targetEl: g,
@@ -301,41 +150,142 @@ export class RhizoneFacetView extends ItemView {
           sourcePath: ""
         })
       );
+      this._noteEls.set(n.path, g as SVGGElement);
+    }
+
+    const legend = root.createDiv({ cls: "rg-tree-legend" });
+    legend.createSpan({ text: "click a note to summon it · click again (or the void) to release · scroll zoom · drag pan" });
+
+    this.applyTransform();
+    this.layout();
+  }
+
+  private toggle(path: string): void {
+    this.keystone = this.keystone === path ? null : path;
+    this.layout();
+  }
+  private release(): void {
+    if (!this.keystone) return;
+    this.keystone = null;
+    this.layout();
+  }
+
+  // ── position every note for the current state (slides via CSS transition) ──
+  private layout(): void {
+    const ordered = this.orderedNotes();
+    if (this._titleEl) this._titleEl.setText(this.keystone ? displayLabel(baseOf(this.keystone)) : "the vault");
+    this._releaseEl?.toggleClass("is-hidden", !this.keystone);
+
+    if (!this.keystone) {
+      // ambient — everyone on the outer ring, undimmed, labels on hover only
+      ordered.forEach((n, i) => this.place(n.path, ringXY(i, ordered.length, R_OUT), { dim: false, related: false, keystone: false }));
+      this.drawCenter(null);
+      return;
+    }
+
+    // focused — keystone to centre, its rare-facet kin to the inner ring, the rest dimmed outside
+    const facets = this.host.noteFacets(this.keystone);
+    const related = this.host.relatedNotes(facets, this.keystone).slice(0, INNER_CAP);
+    const inner = related.map((r) => r.path);
+    const innerSet = new Set(inner);
+
+    this.place(this.keystone, { x: C, y: C }, { dim: false, related: false, keystone: true });
+    inner.forEach((p, i) => this.place(p, ringXY(i, inner.length, R_IN), { dim: false, related: true, keystone: false }));
+
+    const rest = ordered.filter((n) => n.path !== this.keystone && !innerSet.has(n.path));
+    rest.forEach((n, i) => this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: true, related: false, keystone: false }));
+
+    this.drawCenter(this.keystone);
+  }
+
+  private place(path: string, p: { x: number; y: number }, s: { dim: boolean; related: boolean; keystone: boolean }): void {
+    const g = this._noteEls.get(path);
+    if (!g) return;
+    g.setAttribute("transform", `translate(${p.x} ${p.y})`);
+    g.classList.toggle("rg-dim", s.dim);
+    g.classList.toggle("rg-related", s.related);
+    g.classList.toggle("rg-keystone", s.keystone);
+  }
+
+  /** The centre marker (the keystone's name). Cleared/rebuilt each focus. (Slice 3: the local tree.) */
+  private drawCenter(keystone: string | null): void {
+    this._centerEl?.remove();
+    this._centerEl = null;
+    if (!keystone || !this._pan) return;
+    const g = this._pan.createSvg("g", { cls: ["rg-gx-center"] });
+    g.createSvg("text", { cls: ["rg-gx-center-label"], attr: { x: C, y: C + 36, "text-anchor": "middle" } }).setText(
+      trunc(displayLabel(baseOf(keystone)), 30)
+    );
+    this._centerEl = g;
+  }
+
+  private orderedNotes(): NoteRef[] {
+    const ns = [...this.notes];
+    if (this.order === "alpha") {
+      ns.sort((a, b) => a.basename.localeCompare(b.basename));
+    } else {
+      ns.sort(
+        (a, b) =>
+          (this.clusters[a.path] ?? "~").localeCompare(this.clusters[b.path] ?? "~") || a.basename.localeCompare(b.basename)
+      );
+    }
+    return ns;
+  }
+
+  // ── pan + zoom ──
+  private applyTransform(): void {
+    this._pan?.setAttribute("transform", `translate(${this.vt.tx} ${this.vt.ty}) scale(${this.vt.z})`);
+  }
+  private attachPanZoom(svg: SVGElement): void {
+    svg.addEventListener(
+      "wheel",
+      (e: WheelEvent) => {
+        e.preventDefault();
+        const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        this.vt.z = Math.min(4, Math.max(0.35, this.vt.z * f));
+        this.applyTransform();
+      },
+      { passive: false }
+    );
+    let dragging = false;
+    let lx = 0;
+    let ly = 0;
+    svg.addEventListener("pointerdown", (e: PointerEvent) => {
+      dragging = true;
+      lx = e.clientX;
+      ly = e.clientY;
+      svg.addClass("rg-grabbing");
     });
+    svg.addEventListener("pointermove", (e: PointerEvent) => {
+      if (!dragging) return;
+      const rect = svg.getBoundingClientRect();
+      const scale = rect.width ? VIEW / rect.width : 1; // px → viewBox units
+      this.vt.tx += (e.clientX - lx) * scale;
+      this.vt.ty += (e.clientY - ly) * scale;
+      lx = e.clientX;
+      ly = e.clientY;
+      this.applyTransform();
+    });
+    const end = (): void => {
+      dragging = false;
+      svg.removeClass("rg-grabbing");
+    };
+    svg.addEventListener("pointerup", end);
+    svg.addEventListener("pointerleave", end);
   }
 }
 
-function radius(gw: Gateway): number {
-  if (!gw.facet) return 11;
-  return 12 + Math.min(16, Math.sqrt(gw.facet.df) * 3);
+function ringXY(i: number, n: number, r: number): { x: number; y: number } {
+  const ang = -Math.PI / 2 + (n <= 0 ? 0 : (i / n) * Math.PI * 2);
+  return { x: C + Math.cos(ang) * r, y: C + Math.sin(ang) * r };
 }
 
-function gatewayPositions(tree: Tree): Map<string, { x: number; y: number }> {
-  const m = new Map<string, { x: number; y: number }>();
-  for (const gw of tree.gateways) if (gw.facet) m.set(gw.name, { x: mapX(gw.x), y: mapY(gw.y) });
-  return m;
+function baseOf(p: string): string {
+  return p.split("/").pop()!.replace(/\.md$/i, "");
 }
-
-function mapX(x: number): number {
-  return PADX + x * (W - 2 * PADX);
-}
-function mapY(y: number): number {
-  return PADY + y * (H - 2 * PADY);
-}
-
-/** Drop one leading "Word - " organizational prefix for display (kept on disk, stripped here). */
 function displayLabel(label: string): string {
   return label.replace(/^[A-Z][A-Za-z]+ - /, "");
 }
-function labelOf(communityKey: string): string {
-  return trunc(displayLabel(communityKey), 22);
-}
 function trunc(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
-}
-
-function legendChip(parent: HTMLElement, cls: string, text: string): void {
-  const chip = parent.createSpan({ cls: "rg-tree-legend-chip " + cls });
-  chip.createSpan({ cls: "rg-tree-legend-swatch" });
-  chip.createSpan({ text });
 }

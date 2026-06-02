@@ -85,10 +85,15 @@ export class RhizoneFacetView extends ItemView {
       attr: { viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": "The vault as the Ten Gateways" }
     });
 
-    this.drawAxis(svg);
-    this.drawPaths(svg, tree);
-    this.drawDaath(svg, tree);
-    for (const gw of tree.gateways) this.drawGateway(svg, gw);
+    try {
+      this.drawAxis(svg);
+      this.drawPaths(svg, tree);
+      this.drawDaath(svg, tree);
+      for (const gw of tree.gateways) this.drawGateway(svg, gw);
+    } catch (e) {
+      root.createDiv({ cls: "rg-error" }).setText("Rhizone draw error:\n" + String((e as Error)?.stack ?? e));
+      return;
+    }
 
     // ── legend ──
     const legend = root.createDiv({ cls: "rg-tree-legend" });
@@ -125,7 +130,7 @@ export class RhizoneFacetView extends ItemView {
   private drawDaath(svg: SVGElement, tree: Tree): void {
     const px = mapX(DAATH.x);
     const py = mapY(DAATH.y);
-    const g = svg.createSvg("g", { cls: "rg-tree-gate rg-gate-daath" });
+    const g = svg.createSvg("g", { cls: ["rg-tree-gate", "rg-gate-daath"] });
     g.createSvg("circle", { cls: ["rg-tree-dot"], attr: { cx: px, cy: py, r: 15 } });
     g.createSvg("text", { cls: ["rg-tree-sephira"], attr: { x: px, y: py - 24, "text-anchor": "middle" } }).setText("DA'ATH");
     const n = tree.daath.length;

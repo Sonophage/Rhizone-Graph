@@ -356,6 +356,14 @@ export class RhizoneFacetView extends ItemView {
     this._pan?.setAttribute("transform", `translate(${this.vt.tx} ${this.vt.ty}) scale(${this.vt.z})`);
     this.contentEl.toggleClass("rg-show-labels", this.vt.z >= this.zThreshold());
   }
+
+  /** Client pixel → viewBox coords (handles the SVG's letterboxing/aspect via its screen matrix). */
+  private toViewBox(svg: SVGElement, clientX: number, clientY: number): { x: number; y: number } | null {
+    const ctm = (svg as SVGSVGElement).getScreenCTM();
+    if (!ctm) return null;
+    const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }
   private attachPanZoom(svg: SVGElement): void {
     svg.addEventListener(
       "wheel",
@@ -363,7 +371,13 @@ export class RhizoneFacetView extends ItemView {
         e.preventDefault();
         if (e.ctrlKey || e.metaKey || this.keystone) {
           const f = e.deltaY < 0 ? 1.12 : 1 / 1.12; // ctrl-scroll (or while focused) = zoom
-          this.vt.z = Math.min(4, Math.max(0.35, this.vt.z * f));
+          const z2 = Math.min(4, Math.max(0.35, this.vt.z * f));
+          const vb = this.toViewBox(svg, e.clientX, e.clientY); // pointer-aware: keep the point under the cursor fixed
+          if (vb) {
+            this.vt.tx = vb.x - (vb.x - this.vt.tx) * (z2 / this.vt.z);
+            this.vt.ty = vb.y - (vb.y - this.vt.ty) * (z2 / this.vt.z);
+          }
+          this.vt.z = z2;
           this.applyTransform();
         } else {
           this.moveCursor(e.deltaY > 0 ? 1 : -1); // plain scroll = roam the ring

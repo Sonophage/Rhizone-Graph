@@ -1,9 +1,10 @@
-import { ItemView, Menu, type WorkspaceLeaf, type TFile, type App, type Component } from "obsidian";
+import { Component, ItemView, Menu, type WorkspaceLeaf, type TFile, type App } from "obsidian";
 import type { Candidate, LocalWeb, NodeState } from "../engine/types.ts";
 import type { PhantomFacet } from "../engine/cocitation.ts";
 import { BreadcrumbTrail, installKeyboardNav } from "./interaction.ts";
 import { applyRemediation, remediationActions, type RemediationAction } from "./remediation.ts";
 import { NotePickerModal } from "./notePicker.ts";
+import { renderPreview } from "./preview.ts";
 
 export const RETICULAR_VIEW_TYPE = "reticular-scope";
 
@@ -84,6 +85,7 @@ export class ReticularView extends ItemView {
   private _lastScore = 0; // last reticularity shown (so the count-up eases from it)
   private _scoreRaf = 0;
   private _hoverTimer = 0; // debounce for hover → companion inspect
+  private _previewChild: Component | null = null; // per-render owner for the docked note body
 
   constructor(leaf: WorkspaceLeaf, host: ScopeHost) {
     super(leaf);
@@ -180,6 +182,10 @@ export class ReticularView extends ItemView {
   private render(): void {
     const root = this.contentEl;
     root.empty();
+    if (this._previewChild) {
+      this.removeChild(this._previewChild);
+      this._previewChild = null;
+    }
     if (!this.focusPath) {
       root.createDiv({ cls: "rg-empty", text: "Open a note, then run “Open in Reticular Graph”." });
       return;
@@ -485,6 +491,15 @@ export class ReticularView extends ItemView {
 
     this.renderReadout(readout, null);
     this._readoutEl = readout;
+
+    // ── docked note body at the bottom (moved here from the companion) ──
+    const noteDock = root.createEl("details", { cls: "rg-scope-note" });
+    noteDock.open = true;
+    noteDock.createEl("summary", { text: `Note · ${baseOf(this.focusPath)}` });
+    const previewChild = new Component();
+    this.addChild(previewChild);
+    this._previewChild = previewChild;
+    void renderPreview(this.host, this.focusPath, noteDock, previewChild);
 
     if (this.showControls) this.renderControls(root);
     } catch (e) {

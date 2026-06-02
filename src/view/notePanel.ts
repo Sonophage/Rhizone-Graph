@@ -1,4 +1,4 @@
-import { Component, ItemView, MarkdownRenderer, type WorkspaceLeaf } from "obsidian";
+import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { Candidate, NodeState } from "../engine/types.ts";
 import type { PhantomFacet } from "../engine/cocitation.ts";
 import type { ScopeHost } from "./ringView.ts";
@@ -15,14 +15,14 @@ const SECTION_TITLE: Record<NodeState, string> = {
 
 /**
  * Companion inspector. Reflects the galaxy's FOCUS note: breadcrumb, the focus card
- * (title + meta + excerpt + editable properties), then Candidate / Connected / Mentioned
- * sections of clickable connections. Click any row to traverse; designate to forge.
+ * (title + meta + connection counts + editable properties), then Candidate / Connected /
+ * Mentioned / Ghost sections of clickable connections. Click any row to traverse; designate
+ * to forge. The rendered note BODY lives in the Scope (docked below the radar), not here.
  */
 export class ReticularNoteView extends ItemView {
   private host: ScopeHost;
   private current = "";
   private trail: string[] = [];
-  private child: Component | null = null;
 
   constructor(leaf: WorkspaceLeaf, host: ScopeHost) {
     super(leaf);
@@ -55,10 +55,6 @@ export class ReticularNoteView extends ItemView {
     this.trail = trail;
     const el = this.contentEl;
     el.empty();
-    if (this.child) {
-      this.removeChild(this.child);
-      this.child = null;
-    }
 
     const file = this.host.fileForPath(path);
     if (!file) {
@@ -125,23 +121,8 @@ export class ReticularNoteView extends ItemView {
       });
     }
 
-    // ── properties (open by default) then the Note at the bottom ──────────
+    // ── properties (open by default); the rendered Note body now lives in the Scope, docked below the radar ──
     this.renderProperties(root, file.path, (cache?.frontmatter ?? {}) as Record<string, unknown>);
-
-    const noteBox = root.createEl("details", { cls: "rg-note-preview" });
-    noteBox.open = true;
-    noteBox.createEl("summary", { text: "Note" });
-    const body = noteBox.createDiv({ cls: "rg-note-excerpt markdown-rendered" });
-    const child = new Component();
-    this.addChild(child);
-    this.child = child;
-    let md = "";
-    try {
-      md = await this.host.readBody(path);
-    } catch {
-      md = "";
-    }
-    await MarkdownRenderer.render(this.host.app, excerpt(neutralizeDynamic(md)), body, path, child);
   }
 
   /** Ghost-notes section — phantom wikilinks + how many notes share each. Collapsed; its chip reveals it. */
@@ -244,18 +225,4 @@ export class ReticularNoteView extends ItemView {
 
 function baseOf(p: string): string {
   return p.split("/").pop()!.replace(/\.md$/i, "");
-}
-
-function neutralizeDynamic(md: string): string {
-  return md.replace(/```\s*(dataviewjs|dataview|templater-js|js-engine|ad-[\w-]+)[\s\S]*?```/gi, "> *[ dynamic block ]*");
-}
-
-function excerpt(md: string): string {
-  const out = md.startsWith("---\n") ? md.slice(md.indexOf("\n---", 4) + 4) : md;
-  return out
-    .replace(/!\[\[[^\]]*\]\]/g, "")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .slice(0, 2600)
-    .trim();
 }

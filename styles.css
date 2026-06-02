@@ -206,6 +206,24 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   overflow: visible;
 }
 
+/* Docked note body — the rendered focus note, below the radar (moved from the companion) */
+.rg-scope-note {
+  flex: 0 0 auto;
+  max-height: 34vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--rg-grid);
+  margin-top: 6px;
+  padding-top: 4px;
+}
+.rg-scope-note > summary {
+  cursor: pointer;
+  color: var(--rg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7em;
+  margin-bottom: 4px;
+}
+
 /* Ghost notes — phantom (uncreated) wikilinks: faint, dashed, never solid. */
 .rg-rel-base.rg-ghost, .rg-rel-pulse.rg-ghost { stroke: var(--rg-muted); }
 .rg-rel-base.rg-ghost { opacity: 0.25; stroke-dasharray: 2 4; }

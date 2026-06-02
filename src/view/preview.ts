@@ -1,14 +1,16 @@
-import { MarkdownRenderer } from "obsidian";
+import { MarkdownRenderer, type Component } from "obsidian";
 import type { ScopeHost } from "./ringView.ts";
 
 const PREVIEW_CLASS = "rg-preview";
-const MAX_CHARS = 1200; // a glance, not the whole note
+const MAX_CHARS = 2400; // a docked read, not the whole note (the editor has the rest)
 
 /**
  * Render an inline markdown preview of `path` into a `.rg-preview` child of `parent`.
- * Uses MarkdownRenderer (never innerHTML). An empty path clears the region.
+ * Uses MarkdownRenderer (never innerHTML). An empty path clears the region. Pass `owner`
+ * to parent the rendered children to a per-render Component (so they're cleaned up on
+ * re-render); falls back to the host's long-lived previewOwner.
  */
-export async function renderPreview(host: ScopeHost, path: string, parent: HTMLElement): Promise<void> {
+export async function renderPreview(host: ScopeHost, path: string, parent: HTMLElement, owner?: Component): Promise<void> {
   let region = parent.querySelector<HTMLElement>(`.${PREVIEW_CLASS}`);
   if (!region) region = parent.createDiv({ cls: PREVIEW_CLASS });
   region.empty();
@@ -23,7 +25,7 @@ export async function renderPreview(host: ScopeHost, path: string, parent: HTMLE
     return;
   }
   const excerpt = cleanExcerpt(body).slice(0, MAX_CHARS).trim();
-  await MarkdownRenderer.render(host.app, excerpt, region, path, host.previewOwner);
+  await MarkdownRenderer.render(host.app, excerpt, region, path, owner ?? host.previewOwner);
 }
 
 /** Drop frontmatter and image/banner embeds so the preview reads as text, not chrome. */

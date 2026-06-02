@@ -29,6 +29,20 @@ const ROLE_CLASS: Record<Gateway["role"], string> = {
   "community-b": "rg-gate-b"
 };
 
+/** Functional captions — each slot announces its job. ▸ = right community, ◂ = left (per the header). */
+const CAPTION: Record<string, string> = {
+  Kether: "Rarest bridge",
+  Tiphereth: "Keystone",
+  Yesod: "Lesser bridge",
+  Malkuth: "Common ground",
+  Chokmah: "▸ rarest",
+  Chesed: "▸ mid",
+  Netzach: "▸ common",
+  Binah: "◂ rarest",
+  Geburah: "◂ mid",
+  Hod: "◂ common"
+};
+
 /**
  * Rhizone — the tourist's view. PHASE 2: the cold-open frontispiece only — the whole vault
  * rendered as the Ten Gateways (Etz Chaim), altitude = rarity. Static for now; entering a
@@ -156,11 +170,9 @@ export class RhizoneFacetView extends ItemView {
     const py = mapY(DAATH.y);
     const g = svg.createSvg("g", { cls: ["rg-tree-gate", "rg-gate-daath"] });
     g.createSvg("circle", { cls: ["rg-tree-dot"], attr: { cx: px, cy: py, r: 15 } });
-    g.createSvg("text", { cls: ["rg-tree-sephira"], attr: { x: px, y: py - 24, "text-anchor": "middle" } }).setText("DA'ATH");
+    g.createSvg("text", { cls: ["rg-tree-sephira"], attr: { x: px, y: py - 24, "text-anchor": "middle" } }).setText("Phantoms");
     const n = tree.daath.length;
-    g.createSvg("text", { cls: ["rg-tree-label"], attr: { x: px, y: py + 34, "text-anchor": "middle" } }).setText(
-      n ? `${n} phantom${n === 1 ? "" : "s"}` : ""
-    );
+    g.createSvg("text", { cls: ["rg-tree-label"], attr: { x: px, y: py + 34, "text-anchor": "middle" } }).setText(n ? String(n) : "");
     if (n) g.setAttribute("aria-label", "Da'ath — " + tree.daath.slice(0, 6).map((f) => f.label).join(", "));
   }
 
@@ -168,7 +180,7 @@ export class RhizoneFacetView extends ItemView {
     const px = mapX(gw.x);
     const py = mapY(gw.y);
     const g = svg.createSvg("g", { cls: ["rg-tree-gate", ROLE_CLASS[gw.role]] });
-    g.createSvg("text", { cls: ["rg-tree-sephira"], attr: { x: px, y: py - radius(gw) - 10, "text-anchor": "middle" } }).setText(gw.name);
+    g.createSvg("text", { cls: ["rg-tree-sephira"], attr: { x: px, y: py - radius(gw) - 10, "text-anchor": "middle" } }).setText(CAPTION[gw.name] ?? gw.name);
 
     if (!gw.facet) {
       g.addClass("rg-gate-empty");

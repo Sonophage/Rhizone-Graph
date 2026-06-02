@@ -13,7 +13,8 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
 
 const GLYPH: Record<NodeState, string> = { connected: "●", mentioned: "○", candidate: "✦" };
-const GLYPH_GHOST = "▲";
+const SECTION_ORDER: NodeState[] = ["candidate", "connected", "mentioned"];
+const SECTION_TITLE: Record<NodeState, string> = { candidate: "Candidates", connected: "Connected", mentioned: "Mentioned" };
 
 /** Slider value (0..100) → the zoom level at which a state's labels become visible. */
 function zoomFor(sliderValue: number): number {
@@ -39,25 +40,11 @@ export interface ScopeHost {
   /** Show node names inside the radar (persisted). */
   graphLabels(): boolean;
   setGraphLabels(on: boolean): void;
-  /** The focus note's unresolved/phantom wikilinks (latent connectors), toggleable. */
+  /** The focus note's unresolved/phantom wikilinks (latent connectors). */
   phantomFacets(focusPath: string): PhantomFacet[];
-  phantomEnabled(): boolean;
-  setPhantom(on: boolean): void;
   /** Run the radar's motion, overriding OS reduce-motion (persisted). */
   animations(): boolean;
   setAnimations(on: boolean): void;
-  /** Push the focus note + breadcrumb into any open companion panels. */
-  showNote(path: string, trail: string[]): void;
-  /** Companion → galaxy: traverse to a note (pushes breadcrumb). */
-  focusScope(path: string): void;
-  /** Companion → galaxy: jump to an existing breadcrumb (truncates). */
-  jumpScope(path: string): void;
-  /** Companion → galaxy: re-render after an external change (e.g. forge). */
-  refreshScope(): void;
-  /** Toggle the companion Note panel (open if closed, dismiss if open). */
-  openCompanion(): void;
-  /** Spotlight a note's node in any open Scope graph (companion-row hover → graph). */
-  spotlightScope(path: string, on: boolean): void;
   /** Node fan-spread (0..100): how far apart nodes sit within a sector (persisted). */
   spread(): number;
   setSpread(value: number): void;
@@ -170,7 +157,7 @@ export class ReticularView extends ItemView {
   }
 
   private emitFocus(): void {
-    if (this.focusPath) this.host.showNote(this.focusPath, this.trail?.items() ?? [this.focusPath]);
+    /* no-op: the companion was removed; the lists live in the Scope panel now */
   }
 
   private traverseTo(path: string): void {
@@ -218,14 +205,18 @@ export class ReticularView extends ItemView {
       this.showControls = !this.showControls;
       this.render();
     });
-    const companionBtn = header.createSpan({
-      cls: "rg-companion-btn",
-      text: "▤ note panel",
-      attr: { role: "button", tabindex: "0", "aria-label": "Open the companion Note panel" }
-    });
-    companionBtn.onClickEvent(() => this.host.openCompanion());
+    // breadcrumb track — the path you've walked (click a crumb to jump back)
+    if (this.trail && this.trail.items().length > 1) {
+      const track = root.createDiv({ cls: "rg-note-track" });
+      track.createSpan({ cls: "rg-note-track-label", text: "track:" });
+      this.trail.items().forEach((p, i, arr) => {
+        const crumb = track.createSpan({ cls: "rg-note-crumb", text: baseOf(p) });
+        crumb.onClickEvent(() => this.jumpToPath(p));
+        if (i < arr.length - 1) track.createSpan({ cls: "rg-note-crumb-sep", text: " › " });
+      });
+    }
 
-    // ── stage: radar-only (the lists live in the companion Note panel) ──────
+    // ── stage: radar on the left, the connection lists on the right ──────
     const stage = root.createDiv({ cls: "rg-stage" });
     const graphCol = stage.createDiv({ cls: "rg-graph" });
     const svg = graphCol.createSvg("svg", {
@@ -266,7 +257,7 @@ export class ReticularView extends ItemView {
       (candAll.length - zCand.length);
     const total = zOut.length + zIn.length + zMut.length + zCand.length;
     // ghost notes — phantom (uncreated) wikilinks this note makes; their own sector on the rim
-    const ghosts = this.host.phantomEnabled() ? this.host.phantomFacets(this.focusPath).slice(0, 50) : [];
+    const ghosts = this.host.phantomFacets(this.focusPath).slice(0, 50);
 
     // motion master switch (overrides OS reduce-motion) + hide node names if labels are off
     this.contentEl.toggleClass("rg-anim", this.host.animations());
@@ -403,16 +394,8 @@ export class ReticularView extends ItemView {
       });
     }
 
-    // ── ghost notes: a narrow side list beside the radar (off the graph, toggled by the legend ghost chip) ──
-    if (this.host.phantomEnabled() && ghosts.length) {
-      const aside = stage.createDiv({ cls: "rg-ghost-aside" });
-      aside.createDiv({ cls: "rg-ghost-aside-title", text: `GHOST NOTES · ${ghosts.length}` });
-      for (const g of ghosts) {
-        const row = aside.createDiv({ cls: "rg-ghost-aside-row" });
-        row.createSpan({ cls: "rg-ghost-aside-name", text: g.label, attr: { title: g.label } });
-        if (g.shared > 1) row.createSpan({ cls: "rg-ghost-aside-shared", text: String(g.shared) });
-      }
-    }
+    // ── connection lists panel (Candidates / Connected / Mentioned / Ghost) beside the radar ──
+    this.renderPanel(stage, web, ghosts);
 
     if (total === 0) {
       const d = this.host.debug(this.focusPath);
@@ -448,18 +431,6 @@ export class ReticularView extends ItemView {
           this.fadeHiddenEdges(s); // also fade the inter-node edges touching those nodes
         } else this.render();
       });
-    });
-    // ghost toggle — same affordance as the state filters, but flips the persisted setting
-    const ghostOn = this.host.phantomEnabled();
-    const ghostItem = legend.createSpan({
-      cls: "rg-legend-item rg-ghost" + (ghostOn ? "" : " is-hidden"),
-      attr: { role: "button", "aria-label": "Toggle ghost notes visibility" }
-    });
-    ghostItem.createSpan({ cls: "rg-glyph", text: GLYPH_GHOST });
-    ghostItem.createSpan({ text: " ghost" });
-    ghostItem.onClickEvent(() => {
-      this.host.setPhantom(!this.host.phantomEnabled());
-      this.render(); // show/hide the ghost side list beside the radar
     });
     if (this._hiddenCount > 0 && !this.showAll) {
       const more = legend.createSpan({ cls: "rg-more", text: `show +${this._hiddenCount}` });
@@ -572,14 +543,6 @@ export class ReticularView extends ItemView {
       this.host.setAnimations(animBox.checked);
       this.render(); // re-render so entrance + motion gating take effect
     });
-    const phRow = panel.createDiv({ cls: "rg-control-row" });
-    const phBox = phRow.createEl("input", { cls: "rg-toggle", attr: { type: "checkbox" } });
-    phBox.checked = this.host.phantomEnabled();
-    phRow.createSpan({ cls: "rg-control-label", text: "Ghost notes" });
-    phBox.addEventListener("change", () => {
-      this.host.setPhantom(phBox.checked);
-      this.refresh(); // re-render so the companion's phantom section appears/disappears
-    });
     const spreadRow = panel.createDiv({ cls: "rg-control-row" });
     spreadRow.createSpan({ cls: "rg-control-label", text: "Node spread" });
     const spreadInput = spreadRow.createEl("input", {
@@ -629,20 +592,6 @@ export class ReticularView extends ItemView {
     }
     els.forEach((el) => el.classList.add("rg-leaving"));
     window.setTimeout(() => els.forEach((el) => el.remove()), 300);
-  }
-
-  private drawGhost(svg: SVGElement, g: PhantomFacet, x: number, y: number, ang: number): void {
-    const grp = svg.createSvg("g", {
-      cls: "rg-ghost-node",
-      attr: { "aria-label": `${g.label} — phantom, mentioned by ${g.shared} note(s)` }
-    });
-    grp.createSvg("path", { cls: "rg-ghost-dot", attr: { d: triangle(x, y, 6) } });
-    const ox = Math.cos(ang);
-    const oy = Math.sin(ang);
-    const anchor = ox > 0.25 ? "start" : ox < -0.25 ? "end" : "middle";
-    grp
-      .createSvg("text", { cls: "rg-ghost-label", attr: { x: x + ox * 12, y: y + oy * 12 + 4, "text-anchor": anchor } })
-      .setText(clip(g.label, 12));
   }
 
   private drawStar(svg: SVGElement, c: Candidate, x: number, y: number, ang: number): SVGElement {
@@ -735,7 +684,106 @@ export class ReticularView extends ItemView {
   private inspect(c: Candidate): void {
     this.selected = c.path;
     if (this._readoutEl) this.renderReadout(this._readoutEl, c);
-    this.host.showNote(c.path, this.trail?.items() ?? [this.focusPath]);
+  }
+
+  /** The connection lists beside the radar: Candidates / Connected / Mentioned / Ghost. */
+  private renderPanel(stage: HTMLElement, web: LocalWeb, ghosts: PhantomFacet[]): void {
+    const panel = stage.createDiv({ cls: "rg-panel" });
+    const counts = panel.createDiv({ cls: "rg-note-counts" });
+    const byState: Record<NodeState, Candidate[]> = {
+      candidate: web.outer,
+      connected: web.inner.filter((c) => c.state === "connected"),
+      mentioned: web.inner.filter((c) => c.state === "mentioned")
+    };
+    const sections: Array<{ key: string; glyph: string; label: string; count: number; el: HTMLDetailsElement }> = [];
+    for (const state of SECTION_ORDER) {
+      sections.push({
+        key: state,
+        glyph: GLYPH[state],
+        label: SECTION_TITLE[state].toLowerCase(),
+        count: byState[state].length,
+        el: this.renderListSection(panel, state, byState[state])
+      });
+    }
+    sections.push({ key: "ghost", glyph: "◌", label: "ghost notes", count: ghosts.length, el: this.renderGhostList(panel, ghosts) });
+
+    for (const s of sections) {
+      const chip = counts.createSpan({ cls: `rg-count rg-${s.key}`, attr: { role: "button" } });
+      chip.createSpan({ cls: `rg-glyph rg-${s.key}`, text: s.glyph });
+      chip.createSpan({ text: ` ${s.count} ${s.label}` });
+      chip.onClickEvent(() => {
+        s.el.open = !s.el.open;
+        chip.toggleClass("is-open", s.el.open);
+        if (s.el.open) s.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    }
+  }
+
+  private renderListSection(parent: HTMLElement, state: NodeState, items: Candidate[]): HTMLDetailsElement {
+    const sec = parent.createEl("details", { cls: `rg-note-section rg-${state}` });
+    sec.open = false;
+    const title = sec.createEl("summary", { cls: "rg-note-section-title" });
+    title.createSpan({ cls: `rg-glyph rg-${state}`, text: GLYPH[state] });
+    title.createSpan({ text: ` ${SECTION_TITLE[state]} (${items.length})` });
+    if (!items.length) {
+      sec.createDiv({ cls: "rg-note-section-empty", text: "—" });
+      return sec;
+    }
+    for (const c of items) {
+      const row = sec.createDiv({ cls: "rg-note-row" + (c.dangling ? " rg-dangling" : "") });
+      const name = row.createSpan({ cls: "rg-note-row-name", text: (c.dangling ? "⚠ " : "") + c.basename });
+      if (c.dangling) {
+        name.onClickEvent((ev) => this.openRemediation(c.basename, ev));
+      } else if (c.path) {
+        name.onClickEvent(() => this.activate(c)); // re-centre + open in editor
+        row.addEventListener("mouseenter", () => this.highlight(c.path, true));
+        row.addEventListener("mouseleave", () => this.highlight(c.path, false));
+        row.addEventListener("mouseover", (ev) => this.hoverLink(ev, row, c.basename));
+      }
+      if (c.shared.length) {
+        const why = row.createSpan({ cls: "rg-note-why" });
+        why.createSpan({ cls: "rg-note-why-label", text: "WHY " });
+        why.createSpan({ cls: "rg-note-why-facets", text: c.shared.slice(0, 4).map((f) => f.label).join(" · ") });
+      }
+      if (state === "candidate" && !c.dangling) {
+        const forge = row.createSpan({ cls: "rg-note-designate", text: "designate", attr: { role: "button" } });
+        forge.onClickEvent(async () => {
+          await this.host.forge(this.focusPath, c.path);
+          this.render(); // re-render so the candidate moves to Connected, live
+        });
+      }
+    }
+    return sec;
+  }
+
+  private renderGhostList(parent: HTMLElement, ghosts: PhantomFacet[]): HTMLDetailsElement {
+    const sec = parent.createEl("details", { cls: "rg-note-section rg-ghost" });
+    sec.open = false;
+    const title = sec.createEl("summary", { cls: "rg-note-section-title" });
+    title.createSpan({ cls: "rg-glyph rg-ghost", text: "◌" });
+    title.createSpan({ text: ` Ghost notes (${ghosts.length})` });
+    if (!ghosts.length) {
+      sec.createDiv({ cls: "rg-note-section-empty", text: "—" });
+      return sec;
+    }
+    for (const g of ghosts) {
+      const row = sec.createDiv({ cls: "rg-note-row rg-phantom-row" });
+      row.createSpan({ cls: "rg-note-row-name", text: "◌ " + g.label });
+      row.createSpan({ cls: "rg-note-why", text: g.shared > 1 ? `${g.shared} notes mention this` : "only here" });
+    }
+    return sec;
+  }
+
+  /** Obsidian's native page-preview popover near `el` (needs core Page Preview enabled). */
+  private hoverLink(ev: MouseEvent, el: HTMLElement, basename: string): void {
+    this.host.app.workspace.trigger("hover-link", {
+      event: ev,
+      source: "reticular-graph",
+      hoverParent: this,
+      targetEl: el,
+      linktext: basename,
+      sourcePath: this.focusPath
+    });
   }
 
   /** Debounced hover → companion, so sweeping the cursor across rows doesn't thrash the panel. */
@@ -757,11 +805,6 @@ export class ReticularView extends ItemView {
     window.clearTimeout(this._hoverTimer);
     this.host.app.workspace.openLinkText(c.basename, this.focusPath); // open in the editor
     this.traverseTo(c.path); // re-centre the scope here (re-renders + syncs the companion)
-  }
-
-  /** Public spotlight entry — companion-row hover lights the matching node in the graph. */
-  spotlight(path: string, on: boolean): void {
-    this.highlight(path, on);
   }
 
   /** Spotlight: dim the whole graph except `path`, the focus core, and the connections `path` has. */

@@ -6,7 +6,6 @@ import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
 import { forge } from "./src/obsidian/connections.ts";
 import { buildTree as computeTree, type Tree } from "./src/engine/tree.ts";
 import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
-import { ReticularNoteView, RETICULAR_NOTE_VIEW_TYPE } from "./src/view/notePanel.ts";
 import { RhizoneFacetView, RHIZONE_FACET_VIEW_TYPE, type RhizoneHost } from "./src/view/rhizoneView.ts";
 
 interface RGSettings {
@@ -14,7 +13,6 @@ interface RGSettings {
   labelZoom: { connected: number; mentioned: number; candidate: number };
   /** show node names inside the radar */
   graphLabels: boolean;
-  showPhantom: boolean;
   /** run the radar's motion (pulses, twinkle, entrance, sweep) — overrides the OS reduce-motion gate */
   animations: boolean;
   /** node fan-spread within a sector, 0 (tight) .. 100 (wide); 50 = default */
@@ -24,7 +22,6 @@ const DEFAULT_SETTINGS: RGSettings = {
   labelZoom: { connected: 0, mentioned: 10, candidate: 50 },
   graphLabels: true,
   animations: true,
-  showPhantom: false,
   spread: 50
 };
 
@@ -55,12 +52,10 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       labelZoom: { ...DEFAULT_SETTINGS.labelZoom, ...(saved?.labelZoom ?? {}) },
       graphLabels: saved?.graphLabels ?? DEFAULT_SETTINGS.graphLabels,
       animations: saved?.animations ?? DEFAULT_SETTINGS.animations,
-      showPhantom: saved?.showPhantom ?? DEFAULT_SETTINGS.showPhantom,
       spread: saved?.spread ?? DEFAULT_SETTINGS.spread
     };
 
     this.registerView(RETICULAR_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularView(leaf, this));
-    this.registerView(RETICULAR_NOTE_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularNoteView(leaf, this));
     this.registerView(RHIZONE_FACET_VIEW_TYPE, (leaf: WorkspaceLeaf) => new RhizoneFacetView(leaf, this));
 
     this.addCommand({
@@ -72,11 +67,6 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
         if (!checking) void this.openInScope(file.path);
         return true;
       }
-    });
-    this.addCommand({
-      id: "open-note-panel",
-      name: "Open Reticular Note panel",
-      callback: () => void this.openNotePanel()
     });
     this.addCommand({
       id: "open-rhizone",
@@ -210,15 +200,6 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return phantomFacets(focusPath, this.index);
   }
 
-  phantomEnabled(): boolean {
-    return this._settings.showPhantom;
-  }
-
-  setPhantom(on: boolean): void {
-    this._settings.showPhantom = on;
-    void this.saveData(this._settings);
-  }
-
   animations(): boolean {
     return this._settings.animations;
   }
@@ -226,41 +207,6 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
   setAnimations(on: boolean): void {
     this._settings.animations = on;
     void this.saveData(this._settings);
-  }
-
-  /** Push the focus note + breadcrumb into any open companion panels. */
-  showNote(path: string, trail: string[]): void {
-    for (const v of this.getNoteViews()) void v.update(path, trail);
-  }
-
-  /** Companion → galaxy: traverse to a note. */
-  focusScope(path: string): void {
-    for (const v of this.getScopeViews()) v.goTo(path);
-  }
-
-  /** Companion → galaxy: jump to an existing breadcrumb. */
-  jumpScope(path: string): void {
-    for (const v of this.getScopeViews()) v.jumpToPath(path);
-  }
-
-  /** Companion → galaxy: re-render after an external change (forge/remediation). */
-  refreshScope(): void {
-    for (const v of this.getScopeViews()) v.refresh();
-  }
-
-  /** Toggle the companion Note panel — dismiss it if open, else open it seeded with the focus. */
-  openCompanion(): void {
-    const leaves = this.app.workspace.getLeavesOfType(RETICULAR_NOTE_VIEW_TYPE);
-    if (leaves.length) {
-      leaves.forEach((l) => l.detach());
-      return;
-    }
-    void this.openNotePanel();
-  }
-
-  /** Spotlight a note's node in every open Scope graph (companion-row hover → graph). */
-  spotlightScope(path: string, on: boolean): void {
-    for (const v of this.getScopeViews()) v.spotlight(path, on);
   }
 
   spread(): number {
@@ -307,13 +253,6 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       .filter((v): v is ReticularView => v instanceof ReticularView);
   }
 
-  private getNoteViews(): ReticularNoteView[] {
-    return this.app.workspace
-      .getLeavesOfType(RETICULAR_NOTE_VIEW_TYPE)
-      .map((l) => l.view)
-      .filter((v): v is ReticularNoteView => v instanceof ReticularNoteView);
-  }
-
   private getRhizoneViews(): RhizoneFacetView[] {
     return this.app.workspace
       .getLeavesOfType(RHIZONE_FACET_VIEW_TYPE)
@@ -346,16 +285,4 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     (leaf.view as ReticularView).setFocus(path);
   }
 
-  private async openNotePanel(): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(RETICULAR_NOTE_VIEW_TYPE)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getRightLeaf(true)!;
-      await leaf.setViewState({ type: RETICULAR_NOTE_VIEW_TYPE, active: true });
-    }
-    this.app.workspace.revealLeaf(leaf);
-    // Mirror whatever the galaxy is focused on (fall back to the active note).
-    const scope = this.app.workspace.getLeavesOfType(RETICULAR_VIEW_TYPE)[0];
-    const focus = (scope?.view as ReticularView | undefined)?.currentFocus() ?? this.activePath();
-    if (focus) void (leaf.view as ReticularNoteView).update(focus, [focus]);
-  }
 }

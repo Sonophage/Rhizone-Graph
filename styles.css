@@ -196,7 +196,8 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 .rg-galaxy {
   position: relative;

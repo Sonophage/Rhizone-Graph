@@ -1,7 +1,8 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import { Component, ItemView, type WorkspaceLeaf } from "obsidian";
 import type { Candidate, NodeState } from "../engine/types.ts";
 import type { PhantomFacet } from "../engine/cocitation.ts";
 import type { ScopeHost } from "./ringView.ts";
+import { renderPreview } from "./preview.ts";
 
 export const RETICULAR_NOTE_VIEW_TYPE = "reticular-note";
 
@@ -17,12 +18,15 @@ const SECTION_TITLE: Record<NodeState, string> = {
  * Companion inspector. Reflects the galaxy's FOCUS note: breadcrumb, the focus card
  * (title + meta + connection counts + editable properties), then Candidate / Connected /
  * Mentioned / Ghost sections of clickable connections. Click any row to traverse; designate
- * to forge. The rendered note BODY lives in the Scope (docked below the radar), not here.
+ * to forge. Hovering a row previews that note at the bottom; otherwise the focused note shows.
  */
 export class ReticularNoteView extends ItemView {
   private host: ScopeHost;
   private current = "";
   private trail: string[] = [];
+  private _previewRegion: HTMLElement | null = null;
+  private _previewChild: Component | null = null;
+  private _hoverTimer = 0;
 
   constructor(leaf: WorkspaceLeaf, host: ScopeHost) {
     super(leaf);
@@ -55,6 +59,12 @@ export class ReticularNoteView extends ItemView {
     this.trail = trail;
     const el = this.contentEl;
     el.empty();
+    window.clearTimeout(this._hoverTimer);
+    if (this._previewChild) {
+      this.removeChild(this._previewChild);
+      this._previewChild = null;
+    }
+    this._previewRegion = null;
 
     const file = this.host.fileForPath(path);
     if (!file) {
@@ -121,8 +131,33 @@ export class ReticularNoteView extends ItemView {
       });
     }
 
-    // ── properties (open by default); the rendered Note body now lives in the Scope, docked below the radar ──
+    // ── properties (open by default) ──
     this.renderProperties(root, file.path, (cache?.frontmatter ?? {}) as Record<string, unknown>);
+
+    // ── note preview — the focused note by default; hovering a list row previews that note here ──
+    const previewWrap = root.createDiv({ cls: "rg-note-livepreview" });
+    previewWrap.createDiv({ cls: "rg-note-livepreview-label", text: "Preview" });
+    this._previewRegion = previewWrap;
+    this.previewNote(this.current);
+  }
+
+  /** Render `path`'s body into the companion preview region (replacing the previous render). */
+  private previewNote(path: string): void {
+    if (!this._previewRegion) return;
+    if (this._previewChild) {
+      this.removeChild(this._previewChild);
+      this._previewChild = null;
+    }
+    const child = new Component();
+    this.addChild(child);
+    this._previewChild = child;
+    void renderPreview(this.host, path, this._previewRegion, child);
+  }
+
+  /** Debounced hover → preview, so sweeping the cursor across rows doesn't thrash the renderer. */
+  private hoverPreview(path: string): void {
+    window.clearTimeout(this._hoverTimer);
+    this._hoverTimer = window.setTimeout(() => this.previewNote(path), 90);
   }
 
   /** Ghost-notes section — phantom wikilinks + how many notes share each. Collapsed; its chip reveals it. */
@@ -160,10 +195,16 @@ export class ReticularNoteView extends ItemView {
       name.onClickEvent(() => {
         if (!c.dangling) this.host.focusScope(c.path);
       });
-      // hover a row → spotlight that node in the Scope graph (restores the old box↔graph link)
+      // hover a row → spotlight that node in the Scope graph + preview that note here
       if (!c.dangling && c.path) {
-        row.addEventListener("mouseenter", () => this.host.spotlightScope(c.path, true));
-        row.addEventListener("mouseleave", () => this.host.spotlightScope(c.path, false));
+        row.addEventListener("mouseenter", () => {
+          this.host.spotlightScope(c.path, true);
+          this.hoverPreview(c.path);
+        });
+        row.addEventListener("mouseleave", () => {
+          this.host.spotlightScope(c.path, false);
+          this.hoverPreview(this.current); // revert to the focused note
+        });
       }
       if (c.shared.length) {
         const why = row.createSpan({ cls: "rg-note-why" });

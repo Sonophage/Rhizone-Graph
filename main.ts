@@ -19,16 +19,13 @@ interface RGSettings {
   animations: boolean;
   /** node fan-spread within a sector, 0 (tight) .. 100 (wide); 50 = default */
   spread: number;
-  /** dock the rendered note body at the bottom of the Scope */
-  showScopeNote: boolean;
 }
 const DEFAULT_SETTINGS: RGSettings = {
   labelZoom: { connected: 0, mentioned: 10, candidate: 50 },
   graphLabels: true,
   animations: true,
   showPhantom: false,
-  spread: 50,
-  showScopeNote: true
+  spread: 50
 };
 
 export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, RhizoneHost {
@@ -59,8 +56,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       graphLabels: saved?.graphLabels ?? DEFAULT_SETTINGS.graphLabels,
       animations: saved?.animations ?? DEFAULT_SETTINGS.animations,
       showPhantom: saved?.showPhantom ?? DEFAULT_SETTINGS.showPhantom,
-      spread: saved?.spread ?? DEFAULT_SETTINGS.spread,
-      showScopeNote: saved?.showScopeNote ?? DEFAULT_SETTINGS.showScopeNote
+      spread: saved?.spread ?? DEFAULT_SETTINGS.spread
     };
 
     this.registerView(RETICULAR_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularView(leaf, this));
@@ -272,14 +268,6 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
   }
   setSpread(value: number): void {
     this._settings.spread = value;
-    void this.saveData(this._settings);
-  }
-
-  showScopeNote(): boolean {
-    return this._settings.showScopeNote;
-  }
-  setShowScopeNote(on: boolean): void {
-    this._settings.showScopeNote = on;
     void this.saveData(this._settings);
   }
 

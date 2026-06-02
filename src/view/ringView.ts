@@ -1,14 +1,13 @@
-import { Component, ItemView, Menu, type WorkspaceLeaf, type TFile, type App } from "obsidian";
+import { ItemView, Menu, type WorkspaceLeaf, type TFile, type App, type Component } from "obsidian";
 import type { Candidate, LocalWeb, NodeState } from "../engine/types.ts";
 import type { PhantomFacet } from "../engine/cocitation.ts";
 import { BreadcrumbTrail, installKeyboardNav } from "./interaction.ts";
 import { applyRemediation, remediationActions, type RemediationAction } from "./remediation.ts";
 import { NotePickerModal } from "./notePicker.ts";
-import { renderPreview } from "./preview.ts";
 
 export const RETICULAR_VIEW_TYPE = "reticular-scope";
 
-const VIEW = 1040; // SVG viewBox is VIEW×VIEW; CSS scales it to the pane (rings stay fixed → room for the ghost perimeter ring)
+const VIEW = 700; // SVG viewBox is VIEW×VIEW; CSS scales it to the pane. Tight to the radar (ghosts are a side list now, not a perimeter ring).
 const TOP_OUTER = 10;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 4;
@@ -62,9 +61,6 @@ export interface ScopeHost {
   /** Node fan-spread (0..100): how far apart nodes sit within a sector (persisted). */
   spread(): number;
   setSpread(value: number): void;
-  /** Dock the rendered note body at the bottom of the Scope (persisted). */
-  showScopeNote(): boolean;
-  setShowScopeNote(on: boolean): void;
   /** Temporary diagnostic: index size + focus facet count. */
   debug(focusPath: string): { notes: number; focusFacets: number; focusFound: boolean };
   /** Component to parent rendered-markdown children to (for cleanup). */
@@ -93,8 +89,7 @@ export class ReticularView extends ItemView {
   private _lastScore = 0; // last reticularity shown (so the count-up eases from it)
   private _scoreRaf = 0;
   private _hoverTimer = 0; // debounce for hover → companion inspect
-  private _previewChild: Component | null = null; // per-render owner for the docked note body
-  private noteExpanded = false; // docked note enlarged to see more
+  private _nodeState = new Map<string, NodeState>(); // path → state, for fading a hidden state's edges
 
   constructor(leaf: WorkspaceLeaf, host: ScopeHost) {
     super(leaf);
@@ -191,10 +186,6 @@ export class ReticularView extends ItemView {
   private render(): void {
     const root = this.contentEl;
     root.empty();
-    if (this._previewChild) {
-      this.removeChild(this._previewChild);
-      this._previewChild = null;
-    }
     if (!this.focusPath) {
       root.createDiv({ cls: "rg-empty", text: "Open a note, then run “Open in Reticular Graph”." });
       return;
@@ -275,7 +266,7 @@ export class ReticularView extends ItemView {
       (candAll.length - zCand.length);
     const total = zOut.length + zIn.length + zMut.length + zCand.length;
     // ghost notes — phantom (uncreated) wikilinks this note makes; their own sector on the rim
-    const ghosts = this.host.phantomEnabled() ? this.host.phantomFacets(this.focusPath).slice(0, SECTOR_CAP) : [];
+    const ghosts = this.host.phantomEnabled() ? this.host.phantomFacets(this.focusPath).slice(0, 50) : [];
 
     // motion master switch (overrides OS reduce-motion) + hide node names if labels are off
     this.contentEl.toggleClass("rg-anim", this.host.animations());
@@ -351,8 +342,12 @@ export class ReticularView extends ItemView {
 
     // 1. spokes from the focus core to each node — faint base + signal pulse, hue by kind
     const pos = new Map<string, { x: number; y: number }>();
+    this._nodeState.clear();
     for (const { c, x, y } of placed) {
-      if (c.path) pos.set(c.path, { x, y });
+      if (c.path) {
+        pos.set(c.path, { x, y });
+        this._nodeState.set(c.path, c.state);
+      }
       // inbound-only links pulse INWARD (node → focus); everything else pulses outward
       const dir = c.inbound && !c.outbound ? "rg-dir-in" : "";
       const els = signalLine(pan, cx, cy, x, y, "rg-rel", `rg-${c.state}`, dir);
@@ -376,21 +371,6 @@ export class ReticularView extends ItemView {
       if (c.path) nodeEls.set(c.path, g);
     });
     this._spot = { nodeEls, spokeEls, edgeEls, adj };
-
-    // ghost notes — orphans spread evenly around the whole perimeter, a clean ring well outside
-    // the connected nodes and their labels. Starts at the top, walks clockwise.
-    if (ghosts.length) {
-      const RG = R_OUT + 200; // perimeter ring radius — well past the outermost ring + its labels
-      ghosts.forEach((g, i) => {
-        const ang = -Math.PI / 2 + (i / ghosts.length) * Math.PI * 2;
-        const ox = Math.cos(ang);
-        const oy = Math.sin(ang);
-        const x = cx + ox * RG;
-        const y = cy + oy * RG;
-        signalLine(pan, cx, cy, x, y, "rg-rel", "rg-ghost"); // still tethered to the focus that mentions it
-        this.drawGhost(pan, g, x, y, ang);
-      });
-    }
 
     // ── focus core + reticularity score (★) — rarity-weighted richness of this note's own web ──
     const scored = [...web.inner, ...web.outer];
@@ -423,9 +403,16 @@ export class ReticularView extends ItemView {
       });
     }
 
-    // The four note lists + ghost notes now live in the companion Note panel
-    // (open it from the bezel's "▤ note panel" button) — the Scope is radar-only,
-    // so the graph fills the whole pane.
+    // ── ghost notes: a narrow side list beside the radar (off the graph, toggled by the legend ghost chip) ──
+    if (this.host.phantomEnabled() && ghosts.length) {
+      const aside = stage.createDiv({ cls: "rg-ghost-aside" });
+      aside.createDiv({ cls: "rg-ghost-aside-title", text: `GHOST NOTES · ${ghosts.length}` });
+      for (const g of ghosts) {
+        const row = aside.createDiv({ cls: "rg-ghost-aside-row" });
+        row.createSpan({ cls: "rg-ghost-aside-name", text: g.label, attr: { title: g.label } });
+        if (g.shared > 1) row.createSpan({ cls: "rg-ghost-aside-shared", text: String(g.shared) });
+      }
+    }
 
     if (total === 0) {
       const d = this.host.debug(this.focusPath);
@@ -456,8 +443,10 @@ export class ReticularView extends ItemView {
         item.toggleClass("is-hidden", hiding);
         // hiding fades just this state's nodes + lines out and leaves everything else put;
         // showing needs a full render to bring them back (and re-spread the sector)
-        if (hiding) this.fadeOut(`.rg-star.rg-${s}, .rg-rel-base.rg-${s}, .rg-rel-pulse.rg-${s}`);
-        else this.render();
+        if (hiding) {
+          this.fadeOut(`.rg-star.rg-${s}, .rg-rel-base.rg-${s}, .rg-rel-pulse.rg-${s}`);
+          this.fadeHiddenEdges(s); // also fade the inter-node edges touching those nodes
+        } else this.render();
       });
     });
     // ghost toggle — same affordance as the state filters, but flips the persisted setting
@@ -469,11 +458,8 @@ export class ReticularView extends ItemView {
     ghostItem.createSpan({ cls: "rg-glyph", text: GLYPH_GHOST });
     ghostItem.createSpan({ text: " ghost" });
     ghostItem.onClickEvent(() => {
-      const turningOff = this.host.phantomEnabled();
-      this.host.setPhantom(!turningOff);
-      ghostItem.toggleClass("is-hidden", turningOff);
-      if (turningOff) this.fadeOut(".rg-ghost-node, .rg-rel-base.rg-ghost, .rg-rel-pulse.rg-ghost, .rg-ghost-zone");
-      else this.render();
+      this.host.setPhantom(!this.host.phantomEnabled());
+      this.render(); // show/hide the ghost side list beside the radar
     });
     if (this._hiddenCount > 0 && !this.showAll) {
       const more = legend.createSpan({ cls: "rg-more", text: `show +${this._hiddenCount}` });
@@ -501,30 +487,6 @@ export class ReticularView extends ItemView {
 
     this.renderReadout(readout, null);
     this._readoutEl = readout;
-
-    // ── docked note body at the bottom (toggle via the gear; ⤢ in the summary expands it) ──
-    if (this.host.showScopeNote()) {
-      const noteDock = root.createEl("details", { cls: "rg-scope-note" + (this.noteExpanded ? " rg-lg" : "") });
-      noteDock.open = true;
-      const sum = noteDock.createEl("summary");
-      sum.createSpan({ cls: "rg-scope-note-label", text: `Note · ${baseOf(this.focusPath)}` });
-      const exp = sum.createSpan({
-        cls: "rg-scope-note-exp",
-        text: this.noteExpanded ? "⤡" : "⤢",
-        attr: { role: "button", "aria-label": "Expand or shrink the note" }
-      });
-      exp.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation(); // don't collapse the <details>
-        this.noteExpanded = !this.noteExpanded;
-        noteDock.toggleClass("rg-lg", this.noteExpanded);
-        exp.setText(this.noteExpanded ? "⤡" : "⤢");
-      });
-      const previewChild = new Component();
-      this.addChild(previewChild);
-      this._previewChild = previewChild;
-      void renderPreview(this.host, this.focusPath, noteDock, previewChild);
-    }
 
     if (this.showControls) this.renderControls(root);
     } catch (e) {
@@ -618,15 +580,6 @@ export class ReticularView extends ItemView {
       this.host.setPhantom(phBox.checked);
       this.refresh(); // re-render so the companion's phantom section appears/disappears
     });
-    const noteRow = panel.createDiv({ cls: "rg-control-row" });
-    const noteBox = noteRow.createEl("input", { cls: "rg-toggle", attr: { type: "checkbox" } });
-    noteBox.checked = this.host.showScopeNote();
-    noteRow.createSpan({ cls: "rg-control-label", text: "Note at bottom" });
-    noteBox.addEventListener("change", () => {
-      this.host.setShowScopeNote(noteBox.checked);
-      this.render();
-    });
-
     const spreadRow = panel.createDiv({ cls: "rg-control-row" });
     spreadRow.createSpan({ cls: "rg-control-label", text: "Node spread" });
     const spreadInput = spreadRow.createEl("input", {
@@ -655,7 +608,20 @@ export class ReticularView extends ItemView {
    * the rest of the radar stays exactly where it is (no full re-render, no reflow flash).
    */
   private fadeOut(selector: string): void {
-    const els = this._svg ? Array.from(this._svg.querySelectorAll(selector)) : [];
+    this.fadeEls(this._svg ? Array.from(this._svg.querySelectorAll(selector)) : []);
+  }
+
+  /** Fade the inter-node (cyan) edges touching any node of a hidden state, so none dangle. */
+  private fadeHiddenEdges(state: NodeState): void {
+    if (!this._spot) return;
+    const els: Element[] = [];
+    for (const e of this._spot.edgeEls) {
+      if (this._nodeState.get(e.a) === state || this._nodeState.get(e.b) === state) els.push(...e.els);
+    }
+    this.fadeEls(els);
+  }
+
+  private fadeEls(els: Element[]): void {
     if (!els.length) return;
     if (!this.host.animations()) {
       els.forEach((el) => el.remove());

@@ -211,7 +211,7 @@ export class RhizoneFacetView extends ItemView {
 
     const stage = root.createDiv({ cls: "rg-tree-stage" });
     const svg = stage.createSvg("svg", {
-      cls: "rg-tree rg-rz",
+      cls: ["rg-tree", "rg-rz"],
       attr: { viewBox: `0 0 ${W} ${H}`, role: "group", "aria-label": `Rhizome around ${seedKey}` }
     });
     this.drawAxis(svg);

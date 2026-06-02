@@ -35,12 +35,12 @@ const CAPTION: Record<string, string> = {
   Tiphereth: "Keystone",
   Yesod: "Lesser bridge",
   Malkuth: "Common ground",
-  Chokmah: "▸ rarest",
-  Chesed: "▸ mid",
-  Netzach: "▸ common",
-  Binah: "◂ rarest",
-  Geburah: "◂ mid",
-  Hod: "◂ common"
+  Chokmah: "▸ signature",
+  Chesed: "▸ mainstay",
+  Netzach: "▸ face",
+  Binah: "◂ signature",
+  Geburah: "◂ mainstay",
+  Hod: "◂ face"
 };
 
 /**

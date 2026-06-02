@@ -1,0 +1,20 @@
+{
+  "name": "rhizone-graph",
+  "version": "0.1.0",
+  "description": "A local connection-web for Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "test": "node --no-warnings --test test/*.test.mjs"
+  },
+  "keywords": ["obsidian", "plugin", "graph", "co-citation", "connections"],
+  "author": "Sonophage",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "esbuild": "^0.21.5",
+    "obsidian": "^1.5.12",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "rhizone-graph",
+  "name": "Rhizone Graph",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "A local connection-web: direct links, curated connections, and rarity-ranked co-citation candidates as concentric rings.",
+  "author": "Sonophage",
+  "authorUrl": "https://github.com/Sonophage",
+  "isDesktopOnly": false
+}

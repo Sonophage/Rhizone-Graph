@@ -1,0 +1,44 @@
+import esbuild from "esbuild";
+import process from "process";
+import { builtinModules } from "node:module";
+
+const production = process.argv[2] === "production";
+const builtins = builtinModules.flatMap((moduleName) => [moduleName, `node:${moduleName}`]);
+
+const context = await esbuild.context({
+  banner: {
+    js: "/* Rhizone Graph — Obsidian plugin by Sonophage. MIT. */"
+  },
+  entryPoints: ["main.ts"],
+  bundle: true,
+  external: [
+    "obsidian",
+    "electron",
+    "@codemirror/autocomplete",
+    "@codemirror/collab",
+    "@codemirror/commands",
+    "@codemirror/language",
+    "@codemirror/lint",
+    "@codemirror/search",
+    "@codemirror/state",
+    "@codemirror/view",
+    "@lezer/common",
+    "@lezer/highlight",
+    "@lezer/lr",
+    ...builtins
+  ],
+  format: "cjs",
+  target: "es2018",
+  logLevel: "info",
+  sourcemap: production ? false : "inline",
+  treeShaking: true,
+  outfile: "main.js",
+  minify: production
+});
+
+if (production) {
+  await context.rebuild();
+  await context.dispose();
+} else {
+  await context.watch();
+}

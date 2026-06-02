@@ -908,6 +908,19 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   opacity: 0.5;
 }
 .rg-tree-gate:hover .rg-tree-dot { filter: drop-shadow(0 0 7px var(--rg-accent)); }
+.rg-gate-enterable { cursor: pointer; }
+
+/* ── perspectival rhizome ── */
+.rg-rz-back { cursor: pointer; color: var(--rg-muted); font-size: 0.8em; letter-spacing: 0.08em; margin-right: 4px; }
+.rg-rz-back:hover { color: var(--rg-accent); }
+.rg-rz-seed .rg-tree-dot { fill: var(--rg-accent); stroke: var(--rg-bg); stroke-width: 3; }
+.rg-anim .rg-rz-seed .rg-tree-dot { filter: drop-shadow(0 0 10px var(--rg-accent)); }
+.rg-rz-stair { cursor: pointer; }
+.rg-rz-stair .rg-tree-dot { fill: var(--rg-ink); transition: fill 0.15s ease; }
+.rg-rz-stair:hover .rg-tree-dot { fill: var(--rg-accent); filter: drop-shadow(0 0 7px var(--rg-accent)); }
+.rg-rz-door { cursor: pointer; }
+.rg-rz-door-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; transition: r 0.12s ease; }
+.rg-rz-door:hover .rg-rz-door-dot { fill: var(--rg-accent); }
 
 .rg-tree-sephira {
   fill: var(--rg-muted);

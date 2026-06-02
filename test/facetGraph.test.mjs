@@ -8,7 +8,8 @@ import {
   rarityAltitude,
   detectCommunities,
   communities,
-  bridgeScores
+  bridgeScores,
+  neighborhood
 } from "../src/engine/facetGraph.ts";
 
 function rec(path, facets) {
@@ -96,4 +97,16 @@ test("bridge score: the rare cross-cluster facet wins; a cluster-internal facet 
   // a facet co-occurring only within its own community (the isolated Foo/Bar pair) is not a bridge
   assert.equal(scores.get("bar"), 0);
   assert.equal(scores.get("foo"), 0);
+});
+
+test("neighborhood: a seed's co-occurring facets, gravity-ranked (affinity desc)", () => {
+  const n = neighborhood(g, "sci-fi", 10);
+  const keys = n.map((x) => x.key);
+  // its tight cluster-mates come back, the seed itself does not
+  assert.ok(keys.includes("dystopia"));
+  assert.ok(keys.includes("philip k. dick"));
+  assert.ok(!keys.includes("sci-fi"));
+  // ranked by affinity desc: the inseparable pair (Jaccard 1.0) outranks the hub (0.5)
+  assert.ok(n[0].affinity >= n[n.length - 1].affinity);
+  assert.ok((n.find((x) => x.key === "dystopia")?.affinity ?? 0) > (n.find((x) => x.key === "concepts")?.affinity ?? 1));
 });

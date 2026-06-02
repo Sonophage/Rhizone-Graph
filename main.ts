@@ -5,6 +5,7 @@ import type { LocalWeb, NodeState } from "./src/engine/types.ts";
 import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
 import { forge } from "./src/obsidian/connections.ts";
 import { buildTree as computeTree, type Tree } from "./src/engine/tree.ts";
+import { buildFacetGraph, type FacetGraph } from "./src/engine/facetGraph.ts";
 import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
 import { RhizoneFacetView, RHIZONE_FACET_VIEW_TYPE, type RhizoneHost } from "./src/view/rhizoneView.ts";
 
@@ -155,6 +156,20 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
   buildTree(): Tree {
     this.ensureIndex();
     return computeTree(this.index);
+  }
+
+  /** The whole-vault facet graph (perspectival rhizome). */
+  facetGraph(): FacetGraph {
+    this.ensureIndex();
+    return buildFacetGraph(this.index);
+  }
+
+  /** Notes citing a facet — the doors that bloom from it. */
+  notesForFacet(key: string): { path: string; basename: string }[] {
+    this.ensureIndex();
+    return [...this.index.notesWithFacet(key)]
+      .map((p) => ({ path: p, basename: this.index.get(p)?.basename ?? p }))
+      .sort((a, b) => a.basename.localeCompare(b.basename));
   }
 
   neighborEdges(paths: string[]): Array<[string, string]> {

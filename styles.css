@@ -231,6 +231,20 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 }
 .rg-min-btn { cursor: pointer; color: var(--rg-muted); font-size: 0.9em; padding: 0 2px; line-height: 1; }
 .rg-min-btn:hover { color: var(--rg-accent); }
+.rg-companion-btn {
+  flex: 0 0 auto;
+  cursor: pointer;
+  font-size: 0.6em;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--rg-muted);
+  border: 1px solid var(--rg-grid);
+  border-radius: 999px;
+  padding: 3px 11px;
+  white-space: nowrap;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.rg-companion-btn:hover { color: var(--rg-accent); border-color: var(--rg-accent); }
 
 /* Relational lines — faint static base + a traveling "signal" pulse; HUE encodes the kind ------ */
 .rg-rel-base { fill: none; stroke: var(--rg-line); stroke-width: 1; }
@@ -599,21 +613,22 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-lab-candidate .rg-candidate .rg-star-label { opacity: 1; }
 
 /* Companion inspector ------------------------------------------------------ */
-.reticular-note { padding: 10px 14px; height: 100%; overflow: auto; }
+.reticular-note { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.rg-note-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px; }
 .rg-note-empty { color: var(--text-faint); font-style: italic; text-align: center; padding-top: 2em; }
 
 /* Animate the companion when its focus changes — each block fades + lifts in. */
 @keyframes rg-note-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
-.reticular-note > .rg-note-track,
-.reticular-note > .rg-note-head,
-.reticular-note > .rg-note-counts,
-.reticular-note > .rg-note-preview,
-.reticular-note > .rg-note-props,
-.reticular-note > .rg-note-section {
+.rg-note-scroll > .rg-note-track,
+.rg-note-scroll > .rg-note-head,
+.rg-note-scroll > .rg-note-counts,
+.rg-note-scroll > .rg-note-preview,
+.rg-note-scroll > .rg-note-props,
+.rg-note-scroll > .rg-note-section {
   animation: rg-note-in 200ms ease both;
 }
 @media (prefers-reduced-motion: reduce) {
-  .reticular-note > * { animation: none; }
+  .rg-note-scroll > * { animation: none; }
 }
 
 .rg-note-track {
@@ -659,8 +674,6 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   font-size: 1em;
   line-height: 1.55;
   color: var(--text-normal);
-  max-height: 34em;
-  overflow: auto;
   border-left: 2px solid var(--background-modifier-border);
   padding-left: 8px;
   margin-top: 6px;
@@ -671,19 +684,9 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-note-props > summary { cursor: pointer; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.74em; }
 .rg-prop-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: var(--font-ui-small); }
 .rg-prop-key { width: 34%; min-width: 90px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
-.rg-prop-input, .rg-prop-area {
-  flex: 1 1 auto;
-  background: var(--background-modifier-form-field);
-  border: var(--input-border-width, 1px) solid var(--background-modifier-border);
-  border-radius: var(--input-radius, 4px);
-  color: var(--text-normal);
-  font-family: inherit;
-  font-size: inherit;
-  padding: var(--size-2-1, 2px) var(--size-2-2, 6px);
-}
-.rg-prop-input:focus, .rg-prop-area:focus { border-color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent); outline: none; }
+/* lean on the theme's native input/textarea styling so properties match Obsidian */
+.rg-prop-input, .rg-prop-area { flex: 1 1 auto; width: 100%; font-family: inherit; font-size: inherit; }
 .rg-prop-area { min-height: 2.6em; resize: vertical; }
-.rg-prop-bool { accent-color: var(--interactive-accent); }
 
 /* connection sections (collapsible) */
 .rg-note-section { margin: 8px 0; }
@@ -703,9 +706,9 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 
 /* Section toggles hidden — the count chips are the only show/hide control --- */
 .rg-note-section > summary { display: none; }
-.rg-note-section.rg-phantom > summary { display: block; cursor: pointer; }
-.rg-phantom .rg-glyph,
-.rg-phantom-row .rg-note-row-name { color: var(--text-normal); font-style: italic; }
+.rg-ghost .rg-glyph,
+.rg-phantom-row .rg-note-row-name { color: var(--text-muted); font-style: italic; }
+.rg-note-counts .rg-count.rg-ghost .rg-glyph { color: var(--text-muted); }
 .rg-note-counts .rg-count.is-open { color: var(--text-accent); border-color: var(--text-accent); background: var(--background-modifier-hover); }
 
 /* ── Motion suite — all gated behind .rg-anim (the gear's Animations toggle, default on,

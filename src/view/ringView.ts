@@ -54,6 +54,8 @@ export interface ScopeHost {
   jumpScope(path: string): void;
   /** Companion → galaxy: re-render after an external change (e.g. forge). */
   refreshScope(): void;
+  /** Open (or reveal) the companion Note panel. */
+  openCompanion(): void;
   /** Temporary diagnostic: index size + focus facet count. */
   debug(focusPath: string): { notes: number; focusFacets: number; focusFound: boolean };
   /** Component to parent rendered-markdown children to (for cleanup). */
@@ -68,8 +70,6 @@ export class ReticularView extends ItemView {
   private showAll = false;
   private pinned = false; // when pinned, ignore active-note changes
   private showControls = false;
-  private panelMin = false; // minimize the boxes panel → centre the graph
-  private _stageEl: HTMLElement | null = null;
   private hidden = new Set<NodeState>(); // legend filters: hide these states
   private vt = { z: 1, tx: 0, ty: 0 }; // pan/zoom transform state
   private _pan: SVGElement | null = null;
@@ -212,20 +212,15 @@ export class ReticularView extends ItemView {
       this.showControls = !this.showControls;
       this.render();
     });
-    const minBtn = header.createSpan({
-      cls: "rg-min-btn",
-      text: this.panelMin ? "❮" : "❯",
-      attr: { role: "button", tabindex: "0", "aria-label": "Minimize the lists panel" }
+    const companionBtn = header.createSpan({
+      cls: "rg-companion-btn",
+      text: "▤ note panel",
+      attr: { role: "button", tabindex: "0", "aria-label": "Open the companion Note panel" }
     });
-    minBtn.onClickEvent(() => {
-      this.panelMin = !this.panelMin;
-      minBtn.setText(this.panelMin ? "❮" : "❯");
-      this._stageEl?.toggleClass("rg-min", this.panelMin); // live slide, no full re-render
-    });
+    companionBtn.onClickEvent(() => this.host.openCompanion());
 
-    // ── split stage: the radar on the left, the note panel on the right ─────
-    const stage = root.createDiv({ cls: "rg-stage" + (this.panelMin ? " rg-min" : "") });
-    this._stageEl = stage;
+    // ── stage: radar-only (the lists live in the companion Note panel) ──────
+    const stage = root.createDiv({ cls: "rg-stage" });
     const graphCol = stage.createDiv({ cls: "rg-graph" });
     const svg = graphCol.createSvg("svg", {
       cls: "rg-galaxy",
@@ -412,50 +407,9 @@ export class ReticularView extends ItemView {
       });
     }
 
-    // ── right-hand panel: the four note lists, stacked — hover a row to spotlight it in the graph ──
-    const panel = stage.createDiv({ cls: "rg-panel" });
-    const box = (kind: string, title: string, items: Candidate[]): void => {
-      if (!items.length) return; // hide empty boxes entirely
-      const b = panel.createDiv({ cls: `rg-box rg-box-${kind}` });
-      const titleEl = b.createDiv({ cls: "rg-box-title", text: `${title} · ${items.length}` });
-      titleEl.addEventListener("click", () => b.classList.toggle("is-collapsed")); // click title → collapse
-      const listEl = b.createDiv({ cls: "rg-box-list" });
-      for (const c of items) {
-        const row = listEl.createDiv({ cls: `rg-box-row rg-${c.state}` + (c.dangling ? " rg-dangling" : "") });
-        row.createSpan({ cls: `rg-glyph rg-${c.state}`, text: GLYPH[c.state] });
-        row.createSpan({ cls: "rg-box-name", text: (c.dangling ? "⚠ " : "") + c.basename });
-        if (!c.dangling && c.path) {
-          row.addEventListener("mouseenter", () => {
-            this.highlight(c.path, true); // spotlight in the graph
-            this.hoverInspect(c); // update the companion
-          });
-          row.addEventListener("mouseleave", () => {
-            this.highlight(c.path, false);
-            this.revertInspect();
-          });
-          row.addEventListener("click", () => this.activate(c)); // re-centre + open in editor
-        }
-      }
-    };
-    box("out", "OUTBOUND", outboundOnly);
-    box("in", "INBOUND", inboundOnly);
-    box("mut", "MUTUAL", mutual);
-    box("cand", "CANDIDATES", candAll);
-    // ghost notes box — phantom wikilinks + how many notes share each
-    if (ghosts.length) {
-      const gb = panel.createDiv({ cls: "rg-box rg-box-ghost" });
-      const gt = gb.createDiv({ cls: "rg-box-title", text: `GHOST NOTES · ${ghosts.length}` });
-      gt.addEventListener("click", () => gb.classList.toggle("is-collapsed"));
-      const gl = gb.createDiv({ cls: "rg-box-list" });
-      for (const g of ghosts) {
-        const row = gl.createDiv({ cls: "rg-box-row rg-ghost-row" });
-        row.createSpan({ cls: "rg-glyph rg-ghost", text: "◌" });
-        row.createSpan({ cls: "rg-box-name", text: g.label });
-        if (g.shared > 1) row.createSpan({ cls: "rg-box-shared", text: String(g.shared) });
-      }
-    }
-    // no boxes at all → drop the panel and centre the graph
-    if (!panel.childElementCount) stage.addClass("rg-min");
+    // The four note lists + ghost notes now live in the companion Note panel
+    // (open it from the bezel's "▤ note panel" button) — the Scope is radar-only,
+    // so the graph fills the whole pane.
 
     if (total === 0) {
       const d = this.host.debug(this.focusPath);

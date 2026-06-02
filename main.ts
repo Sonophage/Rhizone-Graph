@@ -244,6 +244,11 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     for (const v of this.getScopeViews()) v.refresh();
   }
 
+  /** Open (or reveal) the companion Note panel, seeded with the Scope's current focus. */
+  openCompanion(): void {
+    void this.openNotePanel();
+  }
+
   debug(focusPath: string): { notes: number; focusFacets: number; focusFound: boolean } {
     this.ensureIndex();
     const rec = this.index.get(focusPath);

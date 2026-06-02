@@ -1,5 +1,6 @@
 import { Component, ItemView, MarkdownRenderer, type WorkspaceLeaf } from "obsidian";
 import type { Candidate, NodeState } from "../engine/types.ts";
+import type { PhantomFacet } from "../engine/cocitation.ts";
 import type { ScopeHost } from "./ringView.ts";
 
 export const RETICULAR_NOTE_VIEW_TYPE = "reticular-note";
@@ -65,9 +66,12 @@ export class ReticularNoteView extends ItemView {
       return;
     }
 
+    // single scroll container — theme-proof (don't rely on .view-content scrolling)
+    const root = el.createDiv({ cls: "rg-note-scroll" });
+
     // ── breadcrumb track (moved here from the galaxy) ──────────────────────
     if (trail.length) {
-      const track = el.createDiv({ cls: "rg-note-track" });
+      const track = root.createDiv({ cls: "rg-note-track" });
       track.createSpan({ cls: "rg-note-track-label", text: "track:" });
       trail.forEach((p, i) => {
         const crumb = track.createSpan({ cls: "rg-note-crumb", text: baseOf(p) });
@@ -81,67 +85,50 @@ export class ReticularNoteView extends ItemView {
     const connected = web.inner.filter((c) => c.state === "connected");
     const mentioned = web.inner.filter((c) => c.state === "mentioned");
 
-    const head = el.createDiv({ cls: "rg-note-head" });
+    const head = root.createDiv({ cls: "rg-note-head" });
     head.createSpan({ cls: "rg-note-title", text: file.basename });
     const open = head.createSpan({ cls: "rg-note-open", text: "open ↗", attr: { role: "button" } });
     open.onClickEvent(() => this.host.app.workspace.openLinkText(file.basename, path));
 
     const cache = this.host.app.metadataCache.getFileCache(file);
     const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "vault root";
-    el.createDiv({ cls: "rg-note-meta", text: folder });
-    const counts = el.createDiv({ cls: "rg-note-counts" }); // filled after sections exist
+    root.createDiv({ cls: "rg-note-meta", text: folder });
+    const counts = root.createDiv({ cls: "rg-note-counts" }); // filled after sections exist
 
-    // ── sections FIRST (above the Note), collapsed — open via header or count chip ─
-    const byState: Record<NodeState, Candidate[]> = {
-      candidate: web.outer,
-      connected,
-      mentioned
-    };
-    const sectionEls: Partial<Record<NodeState, HTMLDetailsElement>> = {};
+    // ── sections FIRST (above the Note), collapsed — revealed by their count chip ─
+    const byState: Record<NodeState, Candidate[]> = { candidate: web.outer, connected, mentioned };
+    const sections: Array<{ key: string; glyph: string; label: string; count: number; el: HTMLDetailsElement }> = [];
     for (const state of SECTION_ORDER) {
-      sectionEls[state] = this.renderSection(el, state, byState[state]);
-    }
-
-    // Unlinked mentions — wikilinks this note makes to targets that don't exist yet. Latent
-    // connectors (other notes mentioning the same phantom). Toggleable via the gear.
-    if (this.host.phantomEnabled()) {
-      const phantoms = this.host.phantomFacets(path);
-      if (phantoms.length) {
-        const sec = el.createEl("details", { cls: "rg-note-section rg-phantom" });
-        sec.open = true;
-        const sum = sec.createEl("summary", { cls: "rg-note-section-title" });
-        sum.createSpan({ cls: "rg-glyph", text: "◌" });
-        sum.createSpan({ text: ` Ghost notes (${phantoms.length})` });
-        for (const p of phantoms) {
-          const row = sec.createDiv({ cls: "rg-note-row rg-phantom-row" });
-          row.createSpan({ cls: "rg-note-row-name", text: "◌ " + p.label });
-          row.createSpan({
-            cls: "rg-note-why",
-            text: p.shared > 1 ? `${p.shared} notes mention this` : "only here"
-          });
-        }
-      }
-    }
-
-    // counts under the title — click a number to open that section
-    for (const state of SECTION_ORDER) {
-      const chip = counts.createSpan({ cls: `rg-count rg-${state}`, attr: { role: "button" } });
-      chip.createSpan({ cls: `rg-glyph rg-${state}`, text: GLYPH[state] });
-      chip.createSpan({ text: ` ${byState[state].length} ${SECTION_TITLE[state].toLowerCase()}` });
-      chip.toggleClass("is-open", false);
-      chip.onClickEvent(() => {
-        const d = sectionEls[state];
-        if (!d) return;
-        d.open = !d.open; // the chip is the only control — toggle viewable
-        chip.toggleClass("is-open", d.open);
-        if (d.open) d.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      sections.push({
+        key: state,
+        glyph: GLYPH[state],
+        label: SECTION_TITLE[state].toLowerCase(),
+        count: byState[state].length,
+        el: this.renderSection(root, state, byState[state])
       });
     }
 
-    // ── properties (collapsed) then the Note (open) at the bottom ──────────
-    this.renderProperties(el, file.path, (cache?.frontmatter ?? {}) as Record<string, unknown>);
+    // Ghost notes — wikilinks this note makes to targets that don't exist yet (latent connectors).
+    // Same affordance as the other sections now: its own count chip, collapsed by default, always present.
+    const phantoms = this.host.phantomFacets(path);
+    sections.push({ key: "ghost", glyph: "◌", label: "ghost notes", count: phantoms.length, el: this.renderGhostSection(root, phantoms) });
 
-    const noteBox = el.createEl("details", { cls: "rg-note-preview" });
+    // counts under the title — the only show/hide control for each section
+    for (const s of sections) {
+      const chip = counts.createSpan({ cls: `rg-count rg-${s.key}`, attr: { role: "button" } });
+      chip.createSpan({ cls: `rg-glyph rg-${s.key}`, text: s.glyph });
+      chip.createSpan({ text: ` ${s.count} ${s.label}` });
+      chip.onClickEvent(() => {
+        s.el.open = !s.el.open;
+        chip.toggleClass("is-open", s.el.open);
+        if (s.el.open) s.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    }
+
+    // ── properties (open by default) then the Note at the bottom ──────────
+    this.renderProperties(root, file.path, (cache?.frontmatter ?? {}) as Record<string, unknown>);
+
+    const noteBox = root.createEl("details", { cls: "rg-note-preview" });
     noteBox.open = true;
     noteBox.createEl("summary", { text: "Note" });
     const body = noteBox.createDiv({ cls: "rg-note-excerpt markdown-rendered" });
@@ -155,6 +142,25 @@ export class ReticularNoteView extends ItemView {
       md = "";
     }
     await MarkdownRenderer.render(this.host.app, excerpt(neutralizeDynamic(md)), body, path, child);
+  }
+
+  /** Ghost-notes section — phantom wikilinks + how many notes share each. Collapsed; its chip reveals it. */
+  private renderGhostSection(el: HTMLElement, phantoms: PhantomFacet[]): HTMLDetailsElement {
+    const sec = el.createEl("details", { cls: "rg-note-section rg-ghost" });
+    sec.open = false;
+    const title = sec.createEl("summary", { cls: "rg-note-section-title" });
+    title.createSpan({ cls: "rg-glyph rg-ghost", text: "◌" });
+    title.createSpan({ text: ` Ghost notes (${phantoms.length})` });
+    if (!phantoms.length) {
+      sec.createDiv({ cls: "rg-note-section-empty", text: "—" });
+      return sec;
+    }
+    for (const p of phantoms) {
+      const row = sec.createDiv({ cls: "rg-note-row rg-phantom-row" });
+      row.createSpan({ cls: "rg-note-row-name", text: "◌ " + p.label });
+      row.createSpan({ cls: "rg-note-why", text: p.shared > 1 ? `${p.shared} notes mention this` : "only here" });
+    }
+    return sec;
   }
 
   private renderSection(el: HTMLElement, state: NodeState, items: Candidate[]): HTMLDetailsElement {
@@ -183,6 +189,7 @@ export class ReticularNoteView extends ItemView {
         forge.onClickEvent(async () => {
           await this.host.forge(this.current, c.path);
           this.host.refreshScope();
+          void this.update(this.current, this.trail); // re-render the companion so the candidate moves to Connected
         });
       }
     }
@@ -193,6 +200,7 @@ export class ReticularNoteView extends ItemView {
   private renderProperties(el: HTMLElement, filePath: string, fm: Record<string, unknown>): void {
     const keys = Object.keys(fm);
     const details = el.createEl("details", { cls: "rg-note-props" });
+    details.open = true; // properties open by default
     details.createEl("summary", { text: `Properties (${keys.length})` });
     if (keys.length === 0) {
       details.createDiv({ cls: "rg-note-section-empty", text: "no properties" });

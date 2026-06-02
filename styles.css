@@ -965,14 +965,22 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   transform-origin: center;
 }
 .rg-anim .rg-gx-note.rg-keystone .rg-gx-dot { filter: drop-shadow(0 0 9px var(--rg-accent)); }
-.rg-gx-center-label {
-  fill: var(--rg-accent);
+/* the local Etz Chaim, rebuilt around the keystone, fading in at the centre */
+.rg-anim .rg-gx-center { animation: rg-fade-in 320ms ease; }
+@keyframes rg-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.rg-lt-path { stroke: var(--rg-accent); stroke-width: 1.3; opacity: var(--rg-path-strength, 0.2); }
+.rg-lt-node { cursor: pointer; }
+.rg-lt-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; }
+.rg-lt-node:hover .rg-lt-dot { fill: var(--rg-accent); }
+.rg-anim .rg-lt-node:hover .rg-lt-dot { filter: drop-shadow(0 0 6px var(--rg-accent)); }
+.rg-lt-label {
+  fill: var(--text-normal, #fff);
   font-family: var(--font-monospace, monospace);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  opacity: 0;
   pointer-events: none;
 }
+.rg-lt-node:hover .rg-lt-label { opacity: 1; }
 /* rhizome: white nodes too; the seed (you are here) is distinguished by size + an accent ring */
 .rg-rz-seed .rg-tree-dot { fill: var(--text-normal, #fff); stroke: var(--rg-accent); stroke-width: 3; }
 .rg-anim .rg-rz-seed .rg-tree-dot { filter: drop-shadow(0 0 10px var(--rg-accent)); }

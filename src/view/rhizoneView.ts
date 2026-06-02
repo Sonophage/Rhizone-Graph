@@ -1,6 +1,6 @@
 import { ItemView, type WorkspaceLeaf, type App } from "obsidian";
-import type { Tree } from "../engine/tree.ts";
-import type { FacetGraph } from "../engine/facetGraph.ts";
+import { buildTreeFromGraph, type Tree } from "../engine/tree.ts";
+import { subgraph, type FacetGraph } from "../engine/facetGraph.ts";
 
 export const RHIZONE_FACET_VIEW_TYPE = "rhizone-facet";
 
@@ -45,7 +45,8 @@ interface NoteRef {
  */
 export class RhizoneFacetView extends ItemView {
   private host: RhizoneHost;
-  private keystone: string | null = null; // a note path; null = ambient
+  private keystone: { kind: "note" | "facet"; key: string } | null = null; // null = ambient
+  private _graph: FacetGraph | null = null; // cached whole-vault graph (for local trees)
   private order: "cluster" | "alpha" = "cluster";
   private vt = { z: 1, tx: 0, ty: 0 };
   private cursor = -1; // arrow/scroll navigation index into the ambient outer ring
@@ -91,6 +92,7 @@ export class RhizoneFacetView extends ItemView {
     root.toggleClass("rg-anim", this.host.animations());
     this._noteEls.clear();
     this._centerEl = null;
+    this._graph = null; // the index may have changed; rebuild the graph lazily
 
     try {
       this.notes = this.host.allNotes();
@@ -162,7 +164,7 @@ export class RhizoneFacetView extends ItemView {
       );
       g.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.toggle(n.path);
+        this.setKeystone({ kind: "note", key: n.path });
       });
       g.addEventListener("mouseover", (e) =>
         this.host.app.workspace.trigger("hover-link", {
@@ -188,8 +190,13 @@ export class RhizoneFacetView extends ItemView {
     });
   }
 
-  private toggle(path: string): void {
-    this.keystone = this.keystone === path ? null : path;
+  private graph(): FacetGraph {
+    return (this._graph ??= this.host.facetGraph());
+  }
+
+  private setKeystone(k: { kind: "note" | "facet"; key: string }): void {
+    const same = !!this.keystone && this.keystone.kind === k.kind && this.keystone.key === k.key;
+    this.keystone = same ? null : k;
     this.cursor = -1;
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     if (this.keystone) this.panToCenter();
@@ -214,7 +221,7 @@ export class RhizoneFacetView extends ItemView {
   private summonCursor(): void {
     if (this.keystone) return void this.release();
     const ordered = this.orderedNotes();
-    if (this.cursor >= 0 && this.cursor < ordered.length) this.toggle(ordered[this.cursor].path);
+    if (this.cursor >= 0 && this.cursor < ordered.length) this.setKeystone({ kind: "note", key: ordered[this.cursor].path });
   }
 
   /** zoom at/above which outer-ring labels appear (slider 0..100 → 0.5..3.0×). */
@@ -231,29 +238,32 @@ export class RhizoneFacetView extends ItemView {
   // ── position every note for the current state (slides via CSS transition) ──
   private layout(): void {
     const ordered = this.orderedNotes();
-    if (this._titleEl) this._titleEl.setText(this.keystone ? displayLabel(baseOf(this.keystone)) : "the vault");
-    this._releaseEl?.toggleClass("is-hidden", !this.keystone);
+    const ks = this.keystone;
+    if (this._titleEl) this._titleEl.setText(ks ? displayLabel(ks.kind === "note" ? baseOf(ks.key) : ks.key) : "the vault");
+    this._releaseEl?.toggleClass("is-hidden", !ks);
 
-    if (!this.keystone) {
+    if (!ks) {
       // ambient — everyone on the outer ring, undimmed, labels on hover only
       ordered.forEach((n, i) => this.place(n.path, ringXY(i, ordered.length, R_OUT), { dim: false, related: false, keystone: false }));
       this.drawCenter(null);
       return;
     }
 
-    // focused — keystone to centre, its rare-facet kin to the inner ring, the rest dimmed outside
-    const facets = this.host.noteFacets(this.keystone);
-    const related = this.host.relatedNotes(facets, this.keystone).slice(0, INNER_CAP);
-    const inner = related.map((r) => r.path);
-    const innerSet = new Set(inner);
+    // focused — the keystone's rare-facet kin to the inner ring, the rest dimmed outside
+    const baseFacets = ks.kind === "note" ? this.host.noteFacets(ks.key) : [ks.key];
+    const ksNote = ks.kind === "note" ? ks.key : null;
+    const related = this.host.relatedNotes(baseFacets, ksNote ?? undefined).slice(0, INNER_CAP);
+    const innerSet = new Set(related.map((r) => r.path));
 
-    this.place(this.keystone, { x: C, y: C }, { dim: false, related: false, keystone: true });
-    inner.forEach((p, i) => this.place(p, ringXY(i, inner.length, R_IN), { dim: false, related: true, keystone: false }));
-
-    const rest = ordered.filter((n) => n.path !== this.keystone && !innerSet.has(n.path));
+    if (ksNote) this.place(ksNote, { x: C, y: C }, { dim: false, related: false, keystone: true });
+    related.forEach((r, i) => {
+      if (r.path === ksNote) return;
+      this.place(r.path, ringXY(i, related.length, R_IN), { dim: false, related: true, keystone: false });
+    });
+    const rest = ordered.filter((n) => n.path !== ksNote && !innerSet.has(n.path));
     rest.forEach((n, i) => this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: true, related: false, keystone: false }));
 
-    this.drawCenter(this.keystone);
+    this.drawCenter(ks);
   }
 
   private place(path: string, p: { x: number; y: number }, s: { dim: boolean; related: boolean; keystone: boolean }): void {
@@ -277,15 +287,52 @@ export class RhizoneFacetView extends ItemView {
   }
 
   /** The centre marker (the keystone's name). Cleared/rebuilt each focus. (Slice 3: the local tree.) */
-  private drawCenter(keystone: string | null): void {
+  /** The local Etz Chaim — recomputed on the keystone's facets + one hop — fades in at the centre. */
+  private drawCenter(ks: { kind: "note" | "facet"; key: string } | null): void {
     this._centerEl?.remove();
     this._centerEl = null;
-    if (!keystone || !this._pan) return;
-    const g = this._pan.createSvg("g", { cls: ["rg-gx-center"] });
-    g.createSvg("text", { cls: ["rg-gx-center-label"], attr: { x: C, y: C + 36, "text-anchor": "middle" } }).setText(
-      trunc(displayLabel(baseOf(keystone)), 30)
-    );
-    this._centerEl = g;
+    if (!ks || !this._pan) return;
+
+    const g = this.graph();
+    const base = ks.kind === "note" ? this.host.noteFacets(ks.key) : [ks.key];
+    const seed = new Set<string>();
+    for (const f of base) {
+      if (!g.nodes.has(f)) continue;
+      seed.add(f);
+      for (const nb of g.adjacency.get(f) ?? []) seed.add(nb.key); // one hop
+    }
+    if (!seed.size) return;
+    const tree = buildTreeFromGraph(subgraph(g, seed));
+
+    const grp = this._pan.createSvg("g", { cls: ["rg-gx-center"] });
+    this._centerEl = grp;
+    const BOX = 320;
+    const tx = (x: number): number => C + (x - 0.5) * BOX;
+    const ty = (y: number): number => C + (y - 0.5) * BOX;
+
+    const pos = new Map<string, { x: number; y: number }>();
+    for (const gw of tree.gateways) if (gw.facet) pos.set(gw.name, { x: tx(gw.x), y: ty(gw.y) });
+    for (const p of tree.paths) {
+      const a = pos.get(p.from);
+      const b = pos.get(p.to);
+      if (!a || !b) continue;
+      const line = grp.createSvg("line", { cls: ["rg-lt-path"], attr: { x1: a.x, y1: a.y, x2: b.x, y2: b.y } });
+      line.style.setProperty("--rg-path-strength", String(0.12 + p.affinity * 0.6));
+    }
+    for (const gw of tree.gateways) {
+      if (!gw.facet) continue;
+      const p = pos.get(gw.name)!;
+      const node = grp.createSvg("g", { cls: ["rg-lt-node"], attr: { role: "button", "aria-label": gw.facet.label } });
+      node.createSvg("circle", { cls: ["rg-lt-dot"], attr: { cx: p.x, cy: p.y, r: 7 } });
+      node.createSvg("text", { cls: ["rg-lt-label"], attr: { x: p.x, y: p.y - 12, "text-anchor": "middle" } }).setText(
+        trunc(displayLabel(gw.facet.label), 18)
+      );
+      const key = gw.facet.key;
+      node.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.setKeystone({ kind: "facet", key });
+      });
+    }
   }
 
   private orderedNotes(): NoteRef[] {

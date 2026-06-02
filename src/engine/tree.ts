@@ -88,7 +88,11 @@ function spread(members: FacetNode[]): [FacetNode | null, FacetNode | null, Face
  * landing in two slots: ground (Malkuth) → bridges (middle) → the two community pillars.
  */
 export function buildTree(idx: FacetIndex): Tree {
-  const g = buildFacetGraph(idx);
+  return buildTreeFromGraph(buildFacetGraph(idx));
+}
+
+/** Assign an already-built facet graph to the Ten Gateways — lets callers pass a LOCAL subgraph. */
+export function buildTreeFromGraph(g: FacetGraph): Tree {
   const labels = detectCommunities(g);
   const comms = communities(labels);
   const scores = bridgeScores(g, labels);

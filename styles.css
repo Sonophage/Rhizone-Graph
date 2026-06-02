@@ -855,8 +855,8 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   text-transform: uppercase;
   color: var(--rg-muted);
 }
-.rg-tree-meta-r { color: var(--color-blue, #6f8fd6); }
-.rg-tree-meta-l { color: var(--color-green, #6fcf97); }
+.rg-tree-meta-r { color: var(--rg-comm-a); }
+.rg-tree-meta-l { color: var(--rg-comm-b); }
 
 .rg-tree-stage {
   flex: 1 1 auto;
@@ -896,10 +896,17 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   stroke-width: 2;
   transition: filter 0.15s ease, fill 0.15s ease;
 }
-.rg-gate-bridge .rg-tree-dot { fill: var(--rg-accent); }
-.rg-gate-a .rg-tree-dot { fill: var(--color-blue, #6f8fd6); }
-.rg-gate-b .rg-tree-dot { fill: var(--color-green, #6fcf97); }
-.rg-gate-ground .rg-tree-dot { fill: var(--rg-ink); }
+/* role colours — fixed hues, independent of the theme accent so roles never collide */
+.rhizone-facet {
+  --rg-bridge: var(--color-yellow, #d9a441);
+  --rg-comm-a: var(--color-blue, #6f8fd6);
+  --rg-comm-b: var(--color-purple, #a87fd0);
+  --rg-ground: var(--text-muted, #8a8475);
+}
+.rg-gate-bridge .rg-tree-dot { fill: var(--rg-bridge); }
+.rg-gate-a .rg-tree-dot { fill: var(--rg-comm-a); }
+.rg-gate-b .rg-tree-dot { fill: var(--rg-comm-b); }
+.rg-gate-ground .rg-tree-dot { fill: var(--rg-ground); }
 .rg-gate-empty .rg-tree-dot { fill: none; stroke: var(--rg-grid); stroke-dasharray: 3 3; }
 .rg-gate-daath .rg-tree-dot {
   fill: none;
@@ -913,14 +920,15 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 /* ── perspectival rhizome ── */
 .rg-rz-back { cursor: pointer; color: var(--rg-muted); font-size: 0.8em; letter-spacing: 0.08em; margin-right: 4px; }
 .rg-rz-back:hover { color: var(--rg-accent); }
-.rg-rz-seed .rg-tree-dot { fill: var(--rg-accent); stroke: var(--rg-bg); stroke-width: 3; }
-.rg-anim .rg-rz-seed .rg-tree-dot { filter: drop-shadow(0 0 10px var(--rg-accent)); }
+/* rhizome: the seed (you are here) + stairs are facets = gold; doors = notes = white */
+.rg-rz-seed .rg-tree-dot { fill: var(--rg-bridge); stroke: var(--text-normal, #fff); stroke-width: 3; }
+.rg-anim .rg-rz-seed .rg-tree-dot { filter: drop-shadow(0 0 10px var(--rg-bridge)); }
 .rg-rz-stair { cursor: pointer; }
-.rg-rz-stair .rg-tree-dot { fill: var(--rg-ink); transition: fill 0.15s ease; }
-.rg-rz-stair:hover .rg-tree-dot { fill: var(--rg-accent); filter: drop-shadow(0 0 7px var(--rg-accent)); }
+.rg-rz-stair .rg-tree-dot { fill: var(--rg-bridge); opacity: 0.82; transition: opacity 0.15s ease, filter 0.15s ease; }
+.rg-rz-stair:hover .rg-tree-dot { opacity: 1; filter: drop-shadow(0 0 7px var(--rg-bridge)); }
 .rg-rz-door { cursor: pointer; }
-.rg-rz-door-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; transition: r 0.12s ease; }
-.rg-rz-door:hover .rg-rz-door-dot { fill: var(--rg-accent); }
+.rg-rz-door-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; transition: r 0.12s ease, fill 0.12s ease; }
+.rg-rz-door:hover .rg-rz-door-dot { fill: var(--rg-comm-a); }
 
 .rg-tree-sephira {
   fill: var(--rg-muted);
@@ -965,10 +973,10 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   background: var(--rg-accent);
   flex: 0 0 auto;
 }
-.rg-gate-a .rg-tree-legend-swatch,
-.rg-tree-legend-chip.rg-gate-a .rg-tree-legend-swatch { background: var(--color-blue, #6f8fd6); }
-.rg-tree-legend-chip.rg-gate-b .rg-tree-legend-swatch { background: var(--color-green, #6fcf97); }
-.rg-tree-legend-chip.rg-gate-ground .rg-tree-legend-swatch { background: var(--rg-ink); }
+.rg-tree-legend-chip.rg-gate-bridge .rg-tree-legend-swatch { background: var(--rg-bridge); }
+.rg-tree-legend-chip.rg-gate-a .rg-tree-legend-swatch { background: var(--rg-comm-a); }
+.rg-tree-legend-chip.rg-gate-b .rg-tree-legend-swatch { background: var(--rg-comm-b); }
+.rg-tree-legend-chip.rg-gate-ground .rg-tree-legend-swatch { background: var(--rg-ground); }
 .rg-tree-legend-chip.rg-gate-daath .rg-tree-legend-swatch {
   background: none;
   border: 1px dashed var(--text-normal, #fff);

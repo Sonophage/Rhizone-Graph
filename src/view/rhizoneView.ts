@@ -121,11 +121,11 @@ export class RhizoneFacetView extends ItemView {
 
     // ── legend ──
     const legend = root.createDiv({ cls: "rg-tree-legend" });
-    legendChip(legend, "rg-gate-bridge", "bridges · the stairs");
-    legendChip(legend, "rg-gate-a", "community ▸");
-    legendChip(legend, "rg-gate-b", "community ◂");
-    legendChip(legend, "rg-gate-ground", "Malkuth · the ground");
-    legendChip(legend, "rg-gate-daath", "Da'ath · phantoms");
+    legendChip(legend, "rg-gate-bridge", "bridges — rare connectors");
+    legendChip(legend, "rg-gate-a", tree.communityA ? `▸ ${labelOf(tree.communityA)}` : "▸ right community");
+    legendChip(legend, "rg-gate-b", tree.communityB ? `◂ ${labelOf(tree.communityB)}` : "◂ left community");
+    legendChip(legend, "rg-gate-ground", "Malkuth — common ground");
+    legendChip(legend, "rg-gate-daath", "Da'ath — phantoms");
   }
 
   /** Faint rarity axis: rare at the crown, common at the floor. */

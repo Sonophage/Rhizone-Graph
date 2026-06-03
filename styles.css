@@ -991,7 +991,7 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
   fill: var(--text-normal, #fff);
   font-family: var(--font-monospace, monospace);
   font-size: 11px;
-  opacity: 0;
+  opacity: 0.82;
   pointer-events: none;
 }
 .rg-lt-node:hover .rg-lt-label { opacity: 1; }

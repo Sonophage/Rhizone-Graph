@@ -955,6 +955,11 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-anim .rg-gx-scan { transition: opacity 160ms ease; }
 
 .rg-gx-note { cursor: pointer; }
+/* ghost ring: phantom facets (referenced, never written) — hollow, dashed, faint */
+.rg-gx-ghost .rg-gx-dot { fill: none; stroke: var(--text-faint, #888); stroke-width: 1.2; stroke-dasharray: 2.5 2; }
+.rg-gx-ghost .rg-gx-label { fill: var(--text-faint, #888); font-style: italic; }
+.rg-gx-ghost:hover .rg-gx-dot { stroke: var(--rg-accent); }
+.rg-anim .rg-gx-ghost:hover .rg-gx-dot { filter: drop-shadow(0 0 5px var(--rg-accent)); }
 .rg-anim .rg-gx-note { transition: transform 600ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 360ms ease; }
 .rg-gx-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; }
 .rg-gx-label {

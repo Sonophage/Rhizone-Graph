@@ -7,6 +7,7 @@ export const RHIZONE_FACET_VIEW_TYPE = "rhizone-facet";
 const VIEW = 1400; // viewBox VIEW×VIEW; CSS scales to the pane, pan/zoom via the transform group
 const C = VIEW / 2;
 const R_OUT = 580; // the ever-present outer ring of all notes
+const R_GHOST = 670; // the outermost ring: ghost notes (phantom facets — referenced, never written)
 const R_IN = 250; // the tight inner ring of notes summoned by the keystone
 const INNER_CAP = 30; // most related notes pulled inward at once
 const DOT = 5;
@@ -60,7 +61,9 @@ export class RhizoneFacetView extends ItemView {
 
   private notes: NoteRef[] = [];
   private clusters: Record<string, string> = {};
+  private _ghosts: { key: string; label: string }[] = []; // phantom facets, alpha-ordered
   private _noteEls = new Map<string, SVGGElement>();
+  private _ghostEls = new Map<string, SVGGElement>();
   private _pan: SVGElement | null = null;
   private _centerEl: SVGElement | null = null;
   private _linksEl: SVGElement | null = null;
@@ -108,6 +111,7 @@ export class RhizoneFacetView extends ItemView {
     root.empty();
     root.toggleClass("rg-anim", this.host.animations());
     this._noteEls.clear();
+    this._ghostEls.clear();
     this._centerEl = null;
     this._linksEl = null;
     this._pos.clear();
@@ -115,6 +119,7 @@ export class RhizoneFacetView extends ItemView {
 
     try {
       this.notes = this.host.allNotes();
+      this._ghosts = this.ghostList();
       this._links = this.host.noteLinks();
       this._adj.clear();
       for (const [a, b] of this._links) {
@@ -223,6 +228,27 @@ export class RhizoneFacetView extends ItemView {
       this._noteEls.set(n.path, g as SVGGElement);
     }
 
+    // the outermost ring: ghost notes (phantom facets). Same dots, scatter-in from reverse order.
+    const oppGhost = [...this._ghosts].reverse();
+    const oppGhostPos = new Map<string, { x: number; y: number }>();
+    oppGhost.forEach((gh, i) => oppGhostPos.set(gh.key, ringXY(i, oppGhost.length, R_GHOST)));
+    for (const gh of this._ghosts) {
+      const p0 = oppGhostPos.get(gh.key) ?? { x: C, y: C };
+      const g = pan.createSvg("g", {
+        cls: ["rg-gx-note", "rg-gx-ghost"],
+        attr: { "data-ghost": gh.key, transform: `translate(${p0.x} ${p0.y})` }
+      });
+      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: DOT } });
+      g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
+        trunc(displayLabel(gh.label), 28)
+      );
+      g.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.setKeystone({ kind: "facet", key: gh.key }); // enter the unwritten door
+      });
+      this._ghostEls.set(gh.key, g as SVGGElement);
+    }
+
     // centre readout: the note you're scanning past on the ring (ambient roam)
     this._scanTitleEl = pan.createSvg("text", {
       cls: ["rg-gx-scan"],
@@ -242,6 +268,14 @@ export class RhizoneFacetView extends ItemView {
 
   private graph(): FacetGraph {
     return (this._graph ??= this.host.facetGraph());
+  }
+
+  /** Phantom facets — wikilink targets with no note behind them — alpha by label. */
+  private ghostList(): { key: string; label: string }[] {
+    return [...this.graph().nodes.values()]
+      .filter((n) => n.phantom)
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((n) => ({ key: n.key, label: n.label }));
   }
 
   private setKeystone(k: { kind: "note" | "facet"; key: string }): void {
@@ -324,6 +358,7 @@ export class RhizoneFacetView extends ItemView {
       // ambient — everyone on the outer ring, undimmed, labels on hover only
       this._inner.clear();
       ordered.forEach((n, i) => this.place(n.path, ringXY(i, ordered.length, R_OUT), { dim: false, related: false, keystone: false }));
+      this.layoutGhosts(false);
       this.drawCenter(null);
       this.drawLinks();
       return;
@@ -356,6 +391,7 @@ export class RhizoneFacetView extends ItemView {
       this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: !linked, related: false, keystone: false, linked });
     });
 
+    this.layoutGhosts(true); // ghosts dim with the rest of the periphery on focus
     this.drawCenter(ks);
     this.drawLinks();
   }
@@ -373,17 +409,32 @@ export class RhizoneFacetView extends ItemView {
     g.classList.toggle("rg-related", s.related);
     g.classList.toggle("rg-keystone", s.keystone);
     g.classList.toggle("rg-linked", !!s.linked);
-    // fan the label outward from the galaxy centre, anchored by its angle
+    this.fanLabel(g, p);
+  }
+
+  /** Lay the ghost (phantom-facet) ring at the outer edge — same placement rules as the note rings. */
+  private layoutGhosts(dim: boolean): void {
+    this._ghosts.forEach((gh, i) => {
+      const g = this._ghostEls.get(gh.key);
+      if (!g) return;
+      const p = ringXY(i, this._ghosts.length, R_GHOST);
+      g.setAttribute("transform", `translate(${p.x} ${p.y})`);
+      g.classList.toggle("rg-dim", dim);
+      this.fanLabel(g, p);
+    });
+  }
+
+  /** Fan a node's label outward from the galaxy centre, anchored by its angle. */
+  private fanLabel(g: Element, p: { x: number; y: number }): void {
     const label = g.querySelector(".rg-gx-label");
-    if (label) {
-      const dx = p.x - C;
-      const dy = p.y - C;
-      const len = Math.hypot(dx, dy) || 1;
-      const off = DOT + 12;
-      label.setAttribute("x", String((dx / len) * off));
-      label.setAttribute("y", String((dy / len) * off + 4));
-      label.setAttribute("text-anchor", dx > len * 0.3 ? "start" : dx < -len * 0.3 ? "end" : "middle");
-    }
+    if (!label) return;
+    const dx = p.x - C;
+    const dy = p.y - C;
+    const len = Math.hypot(dx, dy) || 1;
+    const off = DOT + 12;
+    label.setAttribute("x", String((dx / len) * off));
+    label.setAttribute("y", String((dy / len) * off + 4));
+    label.setAttribute("text-anchor", dx > len * 0.3 ? "start" : dx < -len * 0.3 ? "end" : "middle");
   }
 
   /** The centre marker (the keystone's name). Cleared/rebuilt each focus. (Slice 3: the local tree.) */
@@ -430,7 +481,14 @@ export class RhizoneFacetView extends ItemView {
       const p = pos.get(gw.name)!;
       const node = grp.createSvg("g", { cls: ["rg-lt-node"], attr: { role: "button", "aria-label": gw.facet.label } });
       node.createSvg("circle", { cls: ["rg-lt-dot"], attr: { cx: p.x, cy: p.y, r: 7 } });
-      node.createSvg("text", { cls: ["rg-lt-label"], attr: { x: p.x, y: p.y - 12, "text-anchor": "middle" } }).setText(
+      // fan the label outward from the tree centre so the ten gateways don't stack on each other
+      const dx = p.x - C;
+      const dy = p.y - C;
+      const len = Math.hypot(dx, dy);
+      const lx = len < 1 ? p.x : p.x + (dx / len) * 16;
+      const ly = len < 1 ? p.y - 14 : p.y + (dy / len) * 16 + 4;
+      const anchor = dx > len * 0.25 ? "start" : dx < -len * 0.25 ? "end" : "middle";
+      node.createSvg("text", { cls: ["rg-lt-label"], attr: { x: lx, y: ly, "text-anchor": anchor } }).setText(
         trunc(displayLabel(gw.facet.label), 18)
       );
       const key = gw.facet.key;

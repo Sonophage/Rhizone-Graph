@@ -326,7 +326,7 @@ export class RhizoneFacetView extends ItemView {
     this._linksEl?.querySelectorAll(".rg-link-hot").forEach((el) => el.classList.remove("rg-link-hot"));
     this._noteEls.forEach((g) => g.classList.remove("rg-near"));
     this._ghostEls.forEach((g) => g.classList.remove("rg-near"));
-    if (!path || this.keystone) return;
+    if (!path) return; // works in focus too: hover any ring node to light its route
     for (const ln of this._linkEls.get(path) ?? []) ln.classList.add("rg-link-hot");
     for (const nb of this._adj.get(path) ?? [])
       (this._noteEls.get(nb) ?? this._ghostEls.get(nb))?.classList.add("rg-near");
@@ -579,7 +579,8 @@ export class RhizoneFacetView extends ItemView {
           const tp = this._treeFacets.get(fk);
           if (!tp) continue;
           const ln = grp.createSvg("line", { cls: ["rg-gx-tie"], attr: { x1: p.x, y1: p.y, x2: tp.x, y2: tp.y } }) as SVGLineElement;
-          (this._tieEls.get(fk) ?? this._tieEls.set(fk, []).get(fk)!).push(ln);
+          (this._tieEls.get(fk) ?? this._tieEls.set(fk, []).get(fk)!).push(ln); // by facet, for gateway hover
+          (this._linkEls.get(path) ?? this._linkEls.set(path, []).get(path)!).push(ln); // by note, for note hover
         }
       }
     }

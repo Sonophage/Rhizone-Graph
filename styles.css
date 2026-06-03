@@ -1011,13 +1011,15 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-anim .rg-gx-link { transition: opacity 160ms ease, stroke 160ms ease; }
 .rg-gx-tie { stroke: var(--rg-accent); stroke-width: 1; opacity: 0.3; } /* inner-ring note → the tree facet it cites */
 .rg-anim .rg-gx-tie { transition: opacity 140ms ease, stroke-width 140ms ease; }
-.rg-gx-tie.rg-tie-hot { opacity: 0.95; stroke-width: 2; } /* hovering the gateway lights the notes tied to it */
+.rg-gx-tie.rg-tie-hot,
+.rg-gx-tie.rg-link-hot { opacity: 0.95; stroke-width: 2; } /* lit from the gateway (tie-hot) or the note (link-hot) */
 .rg-anim .rg-gx-links { transition: opacity 360ms ease; }
 /* ambient hover: light up the chords on the node under the cursor */
 .rg-gx-link.rg-link-hot { stroke: var(--rg-accent); stroke-width: 1.3; opacity: 0.85; }
 /* focused: dim every chord but the ones live right now (keystone + its inner ring) */
 .rg-gx-links.rg-focused .rg-gx-link { opacity: 0.02; }
 .rg-gx-links.rg-focused .rg-gx-link.rg-link-active { stroke: var(--rg-accent); opacity: 0.45; }
+.rg-gx-links.rg-focused .rg-gx-link.rg-link-hot { opacity: 0.95; } /* hovering a node still lights its route in focus */
 /* the local Etz Chaim, rebuilt around the keystone, fading in at the centre */
 .rg-anim .rg-gx-center { animation: rg-fade-in 320ms ease; }
 @keyframes rg-fade-in { from { opacity: 0; } to { opacity: 1; } }

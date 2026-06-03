@@ -255,6 +255,7 @@ export class RhizoneFacetView extends ItemView {
     const ks = this.keystone;
     if (this._titleEl) this._titleEl.setText(ks ? displayLabel(ks.kind === "note" ? baseOf(ks.key) : ks.key) : "the vault");
     this._releaseEl?.toggleClass("is-hidden", !ks);
+    this.contentEl.toggleClass("rg-rz-focused", !!ks);
 
     if (!ks) {
       // ambient — everyone on the outer ring, undimmed, labels on hover only
@@ -272,19 +273,35 @@ export class RhizoneFacetView extends ItemView {
     const innerSet = new Set(related.map((r) => r.path));
     this._inner = innerSet;
 
+    // outer notes with a direct link/connection into the active set (keystone + inner ring)
+    const activeSet = new Set(innerSet);
+    if (ksNote) activeSet.add(ksNote);
+    const connected = new Set<string>();
+    for (const [a, b] of this._links) {
+      if (activeSet.has(a) && !activeSet.has(b)) connected.add(b);
+      else if (activeSet.has(b) && !activeSet.has(a)) connected.add(a);
+    }
+
     if (ksNote) this.place(ksNote, { x: C, y: C }, { dim: false, related: false, keystone: true });
     related.forEach((r, i) => {
       if (r.path === ksNote) return;
       this.place(r.path, ringXY(i, related.length, R_IN), { dim: false, related: true, keystone: false });
     });
     const rest = ordered.filter((n) => n.path !== ksNote && !innerSet.has(n.path));
-    rest.forEach((n, i) => this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: true, related: false, keystone: false }));
+    rest.forEach((n, i) => {
+      const linked = connected.has(n.path); // tied to the active set → stays lit + labelled
+      this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: !linked, related: false, keystone: false, linked });
+    });
 
     this.drawCenter(ks);
     this.drawLinks();
   }
 
-  private place(path: string, p: { x: number; y: number }, s: { dim: boolean; related: boolean; keystone: boolean }): void {
+  private place(
+    path: string,
+    p: { x: number; y: number },
+    s: { dim: boolean; related: boolean; keystone: boolean; linked?: boolean }
+  ): void {
     const g = this._noteEls.get(path);
     if (!g) return;
     this._pos.set(path, p);
@@ -292,6 +309,7 @@ export class RhizoneFacetView extends ItemView {
     g.classList.toggle("rg-dim", s.dim);
     g.classList.toggle("rg-related", s.related);
     g.classList.toggle("rg-keystone", s.keystone);
+    g.classList.toggle("rg-linked", !!s.linked);
     // fan the label outward from the galaxy centre, anchored by its angle
     const label = g.querySelector(".rg-gx-label");
     if (label) {

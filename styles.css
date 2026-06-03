@@ -941,8 +941,12 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 }
 .rg-gx-note:hover .rg-gx-label,
 .rg-gx-note.rg-related .rg-gx-label,
+.rg-gx-note.rg-linked .rg-gx-label,
 .rg-gx-note.rg-cursor .rg-gx-label { opacity: 1; }
 .rg-show-labels .rg-gx-label { opacity: 1; }
+/* focused: the dimmed (unconnected) outer notes drop their labels entirely — only the
+   keystone, its inner ring, and the notes wired to it stay named */
+.rg-rz-focused .rg-gx-note.rg-dim .rg-gx-label { opacity: 0; }
 .rg-gx-note.rg-keystone .rg-gx-label { opacity: 0; } /* the centre label carries it — no double */
 .rg-gx-note.rg-enter { opacity: 0; } /* fade in as the dots fly out from centre */
 .rg-gx-note.rg-dim { opacity: 0.28; }

@@ -1,4 +1,4 @@
-import { ItemView, debounce, type WorkspaceLeaf, type App } from "obsidian";
+import { ItemView, Notice, debounce, type WorkspaceLeaf, type App } from "obsidian";
 import { buildTreeFromGraph, type Tree } from "../engine/tree.ts";
 import { subgraph, type FacetGraph } from "../engine/facetGraph.ts";
 
@@ -35,6 +35,8 @@ export interface RhizoneHost {
   searchNotes(query: string, limit?: number): Promise<{ path: string; basename: string }[]>;
   /** A short plain-text peek at a note's body, for the door cards. */
   noteExcerpt(path: string, len?: number): Promise<string>;
+  /** Weld a bidirectional connections: edge between two notes (graduates the pair into Reticular). */
+  forge(focusPath: string, candidatePath: string): Promise<void>;
   /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
   openInScope(path: string): void;
   /** Point an already-open Reticular Scope at a note without revealing it (live highlight sync). */
@@ -247,6 +249,11 @@ export class RhizoneFacetView extends ItemView {
       );
       g.addEventListener("click", (e) => {
         e.stopPropagation();
+        // alt-click a rare kin in focus → forge the coincidence into a real connection
+        if (e.altKey && this.keystone?.kind === "note" && this._inner.has(n.path)) {
+          void this.forgeWith(n.path);
+          return;
+        }
         this.setKeystone({ kind: "note", key: n.path });
       });
       g.addEventListener("mouseover", () => {
@@ -290,7 +297,9 @@ export class RhizoneFacetView extends ItemView {
     });
 
     const legend = root.createDiv({ cls: "rg-tree-legend" });
-    legend.createSpan({ text: "click a note to summon · ←/→ or scroll to roam the ring · enter summons · ctrl-scroll zoom · drag pan" });
+    legend.createSpan({
+      text: "click a note to summon · ←/→ or scroll to roam · alt-click a kin to forge (it graduates to Reticular) · ctrl-scroll zoom · drag pan"
+    });
 
     this.applyTransform();
     // paint the entering (centred) state first, then fly the dots out + fade them in
@@ -416,6 +425,22 @@ export class RhizoneFacetView extends ItemView {
     this.layout();
   }
 
+  /**
+   * The depletion forge: weld the keystone↔kin coincidence into a real connections: edge. It
+   * graduates to Reticular (a resident path) and drains out of Rhizone — the kin leaves the inner
+   * ring on the next rebuild (which the metadata "changed" event triggers) and becomes a chord.
+   */
+  private async forgeWith(path: string): Promise<void> {
+    const ks = this.keystone;
+    if (!ks || ks.kind !== "note") return;
+    try {
+      await this.host.forge(ks.key, path);
+      new Notice(`forged · ${displayLabel(baseOf(ks.key))} ↔ ${displayLabel(baseOf(path))}`);
+    } catch (e) {
+      new Notice("forge failed: " + String((e as Error)?.message ?? e));
+    }
+  }
+
   /** Step a highlight cursor around the ambient outer ring (arrow keys / scroll). */
   private moveCursor(delta: number): void {
     if (this.keystone) return; // ring navigation is for the ambient view
@@ -498,7 +523,13 @@ export class RhizoneFacetView extends ItemView {
     // focused — the keystone's rare-facet kin to the inner ring, the rest dimmed outside
     const baseFacets = ks.kind === "note" ? this.host.noteFacets(ks.key) : [ks.key];
     const ksNote = ks.kind === "note" ? ks.key : null;
-    const related = this.host.relatedNotes(baseFacets, ksNote ?? undefined).slice(0, INNER_CAP);
+    // estrangement: the inner ring is rare kin you HAVEN'T drawn yet — forged/linked pairs have
+    // graduated to Reticular and drain out of here (they show as resident chords instead)
+    const drawn = new Set(ksNote ? this._adj.get(ksNote) ?? [] : []);
+    const related = this.host
+      .relatedNotes(baseFacets, ksNote ?? undefined)
+      .filter((r) => !drawn.has(r.path))
+      .slice(0, INNER_CAP);
     const innerSet = new Set(related.map((r) => r.path));
     this._inner = innerSet;
 

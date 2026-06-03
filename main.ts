@@ -242,6 +242,23 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return scored.slice(0, limit).map(({ path, basename }) => ({ path, basename }));
   }
 
+  /** A short plain-text peek at a note's body (frontmatter + markdown stripped). */
+  async noteExcerpt(path: string, len = 200): Promise<string> {
+    const f = this.app.vault.getAbstractFileByPath(path);
+    if (!(f instanceof TFile)) return "";
+    try {
+      const body = (await this.app.vault.cachedRead(f))
+        .replace(/^---\n[\s\S]*?\n---\n?/, "") // frontmatter
+        .replace(/!?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1") // wikilinks → text
+        .replace(/[#>*_`~]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return body.length > len ? body.slice(0, len).trimEnd() + "…" : body;
+    } catch {
+      return "";
+    }
+  }
+
   /** Direct note→note links/connections across the whole vault (the ambient chord web). */
   noteLinks(): Array<[string, string]> {
     this.ensureIndex();

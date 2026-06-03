@@ -33,6 +33,8 @@ export interface RhizoneHost {
   noteClusters(): Record<string, string>;
   /** Search filename + body; returns the best candidate doors (name-match weighted over body). */
   searchNotes(query: string, limit?: number): Promise<{ path: string; basename: string }[]>;
+  /** A short plain-text peek at a note's body, for the door cards. */
+  noteExcerpt(path: string, len?: number): Promise<string>;
   /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
   openInScope(path: string): void;
   /** Point an already-open Reticular Scope at a note without revealing it (live highlight sync). */
@@ -187,11 +189,14 @@ export class RhizoneFacetView extends ItemView {
     search.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Escape") (search.value = "", this.clearResults());
       else if (e.key === "Enter") {
-        const first = this._resultsEl?.querySelector<HTMLElement>(".rg-sr-pick");
-        first?.click();
+        const first = this._resultsEl?.querySelector<HTMLElement>(".rg-door-card");
+        first?.click(); // Enter opens the top door
       }
     });
     this._resultsEl = root.createDiv({ cls: "rg-gx-results", attr: { "aria-hidden": "true" } });
+    this._resultsEl.addEventListener("click", (e) => {
+      if (e.target === this._resultsEl) (search.value = "", this.clearResults()); // click the dim backdrop → close
+    });
 
     // ── stage / svg ──
     const stage = root.createDiv({ cls: "rg-tree-stage" });
@@ -315,13 +320,15 @@ export class RhizoneFacetView extends ItemView {
       .map((n) => ({ key: n.key, label: n.label }));
   }
 
-  // ── search: three candidate doors + how they connect ──
+  // ── search: three candidate doors, each with its body peek + connections ──
   private async runSearch(query: string): Promise<void> {
     if (!query.trim()) return this.clearResults();
     const seq = ++this._searchSeq;
     const hits = await this.host.searchNotes(query, 3);
     if (seq !== this._searchSeq) return; // a newer query landed first
-    this.renderCandidates(hits);
+    const excerpts = await Promise.all(hits.map((h) => this.host.noteExcerpt(h.path, 200)));
+    if (seq !== this._searchSeq) return;
+    this.renderCandidates(hits, excerpts);
   }
 
   private clearResults(): void {
@@ -329,69 +336,47 @@ export class RhizoneFacetView extends ItemView {
     if (!this._resultsEl) return;
     this._resultsEl.empty();
     this._resultsEl.setAttr("aria-hidden", "true");
+    this.contentEl.removeClass("rg-searching");
   }
 
-  /** How two notes connect: a direct link, else the rarest facet they share, else nothing. */
-  private connectionBetween(a: string, b: string): { kind: "link" | "facet"; label: string } | null {
-    if ((this._adj.get(a) ?? []).includes(b)) return { kind: "link", label: "linked" };
-    const fb = new Set(this.host.noteFacets(b));
-    const g = this.graph();
-    let best: { key: string; df: number } | null = null;
-    for (const fk of this.host.noteFacets(a)) {
-      if (!fb.has(fk)) continue;
-      const df = g.nodes.get(fk)?.df ?? Infinity;
-      if (!best || df < best.df) best = { key: fk, df };
-    }
-    return best ? { kind: "facet", label: displayLabel(g.nodes.get(best.key)?.label ?? best.key) } : null;
+  /** A door's connections — its linked notes (and called ghosts), de-duped, by display name. */
+  private connectionNames(path: string, cap = 5): { names: string[]; extra: number } {
+    const uniq = [...new Set(this._adj.get(path) ?? [])];
+    const names = uniq.slice(0, cap).map((c) => trunc(displayLabel(this._noteEls.has(c) ? baseOf(c) : c), 18));
+    return { names, extra: Math.max(0, uniq.length - cap) };
   }
 
-  /** Render the candidate doors as a tiny graph: three notes + how (if) they connect. Pick to enter. */
-  private renderCandidates(hits: { path: string; basename: string }[]): void {
+  /** A small SVG door drawn into a card. */
+  private drawDoor(parent: HTMLElement): void {
+    const svg = parent.createSvg("svg", { cls: ["rg-door-svg"], attr: { viewBox: "0 0 60 92" } });
+    svg.createSvg("path", { cls: ["rg-door-frame"], attr: { d: "M9 90 L9 28 Q9 6 30 6 Q51 6 51 28 L51 90 Z" } });
+    svg.createSvg("path", { cls: ["rg-door-panel"], attr: { d: "M15 84 L15 31 Q15 14 30 14 Q45 14 45 31 L45 84 Z" } });
+    svg.createSvg("circle", { cls: ["rg-door-knob"], attr: { cx: 41, cy: 55, r: 2.4 } });
+  }
+
+  /** Three door cards over a blurred view: a door, the note's name, a body peek, its connections. */
+  private renderCandidates(hits: { path: string; basename: string }[], excerpts: string[]): void {
     const host = this._resultsEl;
     if (!host) return;
     host.empty();
+    host.setAttr("aria-hidden", "false");
+    this.contentEl.addClass("rg-searching"); // blur the galaxy behind
     if (!hits.length) {
       host.createDiv({ cls: "rg-sr-empty", text: "no doors found" });
-      host.setAttr("aria-hidden", "false");
       return;
     }
-    host.setAttr("aria-hidden", "false");
-    const SW = 280;
-    const SH = 168;
-    const svg = host.createSvg("svg", { cls: ["rg-sr-svg"], attr: { viewBox: `0 0 ${SW} ${SH}` } });
-    const spots =
-      hits.length === 1
-        ? [{ x: 140, y: 84 }]
-        : hits.length === 2
-          ? [{ x: 72, y: 84 }, { x: 208, y: 84 }]
-          : [{ x: 140, y: 38 }, { x: 58, y: 132 }, { x: 222, y: 132 }];
-
-    // edges first (behind the nodes)
-    for (let i = 0; i < hits.length; i++) {
-      for (let j = i + 1; j < hits.length; j++) {
-        const c = this.connectionBetween(hits[i].path, hits[j].path);
-        if (!c) continue;
-        const a = spots[i];
-        const b = spots[j];
-        svg.createSvg("line", {
-          cls: c.kind === "link" ? ["rg-sr-edge", "rg-sr-edge-link"] : ["rg-sr-edge"],
-          attr: { x1: a.x, y1: a.y, x2: b.x, y2: b.y }
-        });
-        svg.createSvg("text", {
-          cls: ["rg-sr-edgelabel"],
-          attr: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 3, "text-anchor": "middle" }
-        }).setText(trunc(c.label, 16));
-      }
-    }
-    // nodes
+    const row = host.createDiv({ cls: "rg-door-row" });
     hits.forEach((h, i) => {
-      const p = spots[i];
-      const node = svg.createSvg("g", { cls: ["rg-sr-pick"], attr: { role: "button", "aria-label": h.basename } });
-      node.createSvg("circle", { cls: ["rg-sr-dot"], attr: { cx: p.x, cy: p.y, r: 6 } });
-      node.createSvg("text", { cls: ["rg-sr-label"], attr: { x: p.x, y: p.y + 20, "text-anchor": "middle" } }).setText(
-        trunc(displayLabel(h.basename), 22)
-      );
-      node.addEventListener("click", () => {
+      const card = row.createDiv({ cls: "rg-door-card", attr: { role: "button", "aria-label": h.basename } });
+      this.drawDoor(card);
+      card.createDiv({ cls: "rg-door-title", text: trunc(displayLabel(h.basename), 28) });
+      card.createDiv({ cls: "rg-door-snippet", text: excerpts[i] || "—" });
+      const { names, extra } = this.connectionNames(h.path);
+      const conns = card.createDiv({ cls: "rg-door-conns" });
+      if (!names.length) conns.createSpan({ cls: "rg-door-conn rg-door-conn-none", text: "no connections" });
+      for (const nm of names) conns.createSpan({ cls: "rg-door-conn", text: nm });
+      if (extra > 0) conns.createSpan({ cls: "rg-door-conn rg-door-conn-more", text: `+${extra}` });
+      card.addEventListener("click", () => {
         if (this._searchEl) this._searchEl.value = "";
         this.clearResults();
         this.setKeystone({ kind: "note", key: h.path });

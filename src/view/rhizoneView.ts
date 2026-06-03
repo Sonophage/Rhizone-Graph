@@ -69,6 +69,8 @@ export class RhizoneFacetView extends ItemView {
 
   private _links: Array<[string, string]> = []; // cached vault link web (chords)
   private _linkEls = new Map<string, SVGLineElement[]>(); // path → its chord <line>s, for hover-brighten
+  private _adj = new Map<string, string[]>(); // path → directly linked paths (for "show connected labels")
+  private _hover: string | null = null; // note currently under the pointer (ambient)
   private _pos = new Map<string, { x: number; y: number }>(); // each note's current placed position
   private _inner = new Set<string>(); // notes currently on the inner ring (focused state)
   private _treeFacets = new Map<string, { x: number; y: number }>(); // local-tree Sephira facet positions
@@ -112,6 +114,11 @@ export class RhizoneFacetView extends ItemView {
     try {
       this.notes = this.host.allNotes();
       this._links = this.host.noteLinks();
+      this._adj.clear();
+      for (const [a, b] of this._links) {
+        (this._adj.get(a) ?? this._adj.set(a, []).get(a)!).push(b);
+        (this._adj.get(b) ?? this._adj.set(b, []).get(b)!).push(a);
+      }
       this.clusters = this.order === "cluster" ? this.host.noteClusters() : {};
     } catch (e) {
       root.createDiv({ cls: "rg-error" }).setText("Rhizone error:\n" + String((e as Error)?.stack ?? e));
@@ -151,7 +158,10 @@ export class RhizoneFacetView extends ItemView {
       attr: { viewBox: `0 0 ${VIEW} ${VIEW}`, role: "group", tabindex: "0", "aria-label": "The vault as a galaxy of notes" }
     });
     svg.addEventListener("click", (e) => {
-      if (e.target === svg) this.release(); // click the void → let go
+      if (e.target !== svg) return; // a node/label handled the click itself
+      // empty centre + something under the pointer → summon it (forgiving of the tiny dots)
+      if (!this.keystone && this._hover) this.setKeystone({ kind: "note", key: this._hover });
+      else this.release(); // otherwise, clicking the void lets go
     });
     svg.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === "ArrowDown") (e.preventDefault(), this.moveCursor(1));
@@ -189,7 +199,8 @@ export class RhizoneFacetView extends ItemView {
         this.setKeystone({ kind: "note", key: n.path });
       });
       g.addEventListener("mouseover", (e) => {
-        this.hotLinks(n.path, true);
+        this._hover = n.path;
+        this.highlightConnections(n.path);
         this.host.app.workspace.trigger("hover-link", {
           event: e,
           source: "reticular-graph",
@@ -199,7 +210,10 @@ export class RhizoneFacetView extends ItemView {
           sourcePath: ""
         });
       });
-      g.addEventListener("mouseout", () => this.hotLinks(n.path, false));
+      g.addEventListener("mouseout", () => {
+        if (this._hover === n.path) this._hover = null;
+        this.highlightConnections(null);
+      });
       this._noteEls.set(n.path, g as SVGGElement);
     }
 
@@ -249,10 +263,17 @@ export class RhizoneFacetView extends ItemView {
     const note = ordered[this.cursor];
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     this._noteEls.get(note.path)?.classList.add("rg-cursor");
-    // light up the chords on the note we just scanned to (and drop the previous one's)
-    this._linksEl?.querySelectorAll(".rg-link-hot").forEach((el) => el.classList.remove("rg-link-hot"));
-    for (const ln of this._linkEls.get(note.path) ?? []) ln.classList.add("rg-link-hot");
+    this.highlightConnections(note.path); // light its chords + reveal its connected notes' labels
     this.updateScanTitle();
+  }
+
+  /** Ambient: light a note's chords and reveal the labels of the notes it's connected to. */
+  private highlightConnections(path: string | null): void {
+    this._linksEl?.querySelectorAll(".rg-link-hot").forEach((el) => el.classList.remove("rg-link-hot"));
+    this._noteEls.forEach((g) => g.classList.remove("rg-near"));
+    if (!path || this.keystone) return;
+    for (const ln of this._linkEls.get(path) ?? []) ln.classList.add("rg-link-hot");
+    for (const nb of this._adj.get(path) ?? []) this._noteEls.get(nb)?.classList.add("rg-near");
   }
 
   /** Mirror the note under the roam cursor into the ring's centre (ambient only). */
@@ -379,7 +400,7 @@ export class RhizoneFacetView extends ItemView {
 
     const grp = this._pan.createSvg("g", { cls: ["rg-gx-center"] });
     this._centerEl = grp;
-    const BOX = 320;
+    const BOX = 380;
     const tx = (x: number): number => C + (x - 0.5) * BOX;
     const ty = (y: number): number => C + (y - 0.5) * BOX;
 
@@ -455,12 +476,6 @@ export class RhizoneFacetView extends ItemView {
         }
       }
     }
-  }
-
-  /** Brighten the chords touching a note (ambient hover only — focus has its own active set). */
-  private hotLinks(path: string, on: boolean): void {
-    if (this.keystone) return;
-    for (const ln of this._linkEls.get(path) ?? []) ln.classList.toggle("rg-link-hot", on);
   }
 
   private orderedNotes(): NoteRef[] {

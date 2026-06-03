@@ -966,7 +966,8 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 }
 .rg-gx-note:hover .rg-gx-label,
 .rg-gx-note.rg-related .rg-gx-label,
-.rg-gx-note.rg-linked .rg-gx-label { opacity: 1; }
+.rg-gx-note.rg-near .rg-gx-label,
+.rg-gx-note.rg-linked .rg-gx-label { opacity: 1; pointer-events: auto; } /* clicking the name selects ITS node, not the dot behind the text */
 /* the scanned node's name is carried by the big centre readout — don't also print it on the
    ring (the glowing cursor dot already marks which one it is). No double "Opaline". */
 .rg-gx-note.rg-cursor .rg-gx-label { opacity: 0; }
@@ -1017,8 +1018,8 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-lt-label {
   fill: var(--text-normal, #fff);
   font-family: var(--font-monospace, monospace);
-  font-size: 11px;
-  opacity: 0.82;
+  font-size: 13px;
+  opacity: 0.9;
   pointer-events: none;
 }
 .rg-lt-node:hover .rg-lt-label { opacity: 1; }

@@ -30,6 +30,8 @@ export interface RhizoneHost {
   noteLinks(): Array<[string, string]>;
   /** path → facet-community label (for cluster ordering). */
   noteClusters(): Record<string, string>;
+  /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
+  openInScope(path: string): void;
   /** Run motion, overriding OS reduce-motion (persisted, shared with the Scope). */
   animations(): boolean;
 }
@@ -228,6 +230,8 @@ export class RhizoneFacetView extends ItemView {
     this.cursor = -1;
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     if (this.keystone) this.panToCenter();
+    // point the resident graph at the same note — tourist (Rhizone) ↔ resident (Reticular)
+    if (this.keystone && this.keystone.kind === "note") this.host.openInScope(this.keystone.key);
     this.layout();
   }
   private release(): void {
@@ -245,6 +249,9 @@ export class RhizoneFacetView extends ItemView {
     const note = ordered[this.cursor];
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     this._noteEls.get(note.path)?.classList.add("rg-cursor");
+    // light up the chords on the note we just scanned to (and drop the previous one's)
+    this._linksEl?.querySelectorAll(".rg-link-hot").forEach((el) => el.classList.remove("rg-link-hot"));
+    for (const ln of this._linkEls.get(note.path) ?? []) ln.classList.add("rg-link-hot");
     this.updateScanTitle();
   }
 

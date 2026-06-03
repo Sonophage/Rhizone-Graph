@@ -1,30 +1,7 @@
 /* Reticular Graph — "The Scope". CRT/Bureau targeting reticle.
    All colour flows through CSS variables that default to Obsidian theme tokens, so the
-   view adapts to dark / daylight / glass / accent presets automatically. The phosphor
-   override and motion sliders below are exposed via the Style Settings plugin. */
-
-/* @settings
-name: Rhizone Graph
-id: rhizone-graph
-settings:
-  -
-    id: rg-phosphor
-    title: Phosphor mode
-    description: Monochrome CRT override for the scope
-    type: class-select
-    allowEmpty: false
-    default: rg-phosphor-off
-    options:
-      -
-        label: Theme accent
-        value: rg-phosphor-off
-      -
-        label: Amber
-        value: rg-phosphor-amber
-      -
-        label: Green
-        value: rg-phosphor-green
-*/
+   view adapts to dark / daylight / glass / accent presets automatically — including the
+   active theme's phosphor accent preset. No Style Settings of its own. */
 
 :is(.reticular-graph, .rhizone-facet) {
   --rg-accent: var(--interactive-accent, #d08b2c);
@@ -49,30 +26,6 @@ settings:
   gap: 6px;
   color: var(--rg-ink);
   font-family: var(--font-monospace, monospace);
-}
-
-/* Phosphor overrides ------------------------------------------------------- */
-body.rg-phosphor-amber :is(.reticular-graph, .rhizone-facet) {
-  --rg-accent: #ffb347;
-  --rg-ink: #e8b765;
-  --rg-muted: #8a6a2e;
-  --rg-grid: #4a3411;
-  --rg-line: #ffb347;
-  --rg-link: #c98a4a;
-  --rg-connected: #ffcf87;
-  --rg-mentioned: #d99a52;
-  --rg-candidate: #a9762e;
-}
-body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
-  --rg-accent: #7CFC9B;
-  --rg-ink: #79e6a0;
-  --rg-muted: #3f7a55;
-  --rg-grid: #143a23;
-  --rg-line: #7CFC9B;
-  --rg-link: #4ac9a0;
-  --rg-connected: #a8f5c2;
-  --rg-mentioned: #6fcf97;
-  --rg-candidate: #3f9e6b;
 }
 
 /* Header: tag · title · follow chip --------------------------------------- */

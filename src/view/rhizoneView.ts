@@ -75,6 +75,7 @@ export class RhizoneFacetView extends ItemView {
   private _links: Array<[string, string]> = []; // cached vault link web (chords)
   private _ghostLinks: Array<[string, string]> = []; // [ghostKey, notePath] — a note that calls a phantom facet
   private _linkEls = new Map<string, SVGLineElement[]>(); // key → its chord <line>s, for hover-brighten
+  private _tieEls = new Map<string, SVGLineElement[]>(); // tree facet key → inner-ring tie <line>s
   private _adj = new Map<string, string[]>(); // key → directly linked keys (notes + ghosts, for "show connected labels")
   private _hover: string | null = null; // note currently under the pointer (ambient)
   private _pos = new Map<string, { x: number; y: number }>(); // each note's current placed position
@@ -517,8 +518,14 @@ export class RhizoneFacetView extends ItemView {
       );
       const key = gw.facet.key;
       const touching = pathsAt.get(gw.name) ?? [];
-      node.addEventListener("mouseover", () => touching.forEach((ln) => ln.classList.add("rg-lt-hot")));
-      node.addEventListener("mouseout", () => touching.forEach((ln) => ln.classList.remove("rg-lt-hot")));
+      node.addEventListener("mouseover", () => {
+        touching.forEach((ln) => ln.classList.add("rg-lt-hot"));
+        (this._tieEls.get(key) ?? []).forEach((ln) => ln.classList.add("rg-tie-hot")); // ties from inner notes to this facet
+      });
+      node.addEventListener("mouseout", () => {
+        touching.forEach((ln) => ln.classList.remove("rg-lt-hot"));
+        (this._tieEls.get(key) ?? []).forEach((ln) => ln.classList.remove("rg-tie-hot"));
+      });
       node.addEventListener("click", (e) => {
         e.stopPropagation();
         this.setKeystone({ kind: "facet", key });
@@ -540,6 +547,7 @@ export class RhizoneFacetView extends ItemView {
     this._pan.insertBefore(grp, this._pan.firstChild); // behind the note dots + the centre tree
     this._linksEl = grp;
     this._linkEls.clear();
+    this._tieEls.clear();
 
     // focused: dim every chord but the ones touching the keystone or its inner ring (active here & now)
     const ksNote = this.keystone && this.keystone.kind === "note" ? this.keystone.key : null;
@@ -568,7 +576,9 @@ export class RhizoneFacetView extends ItemView {
         if (!p) continue;
         for (const fk of this.host.noteFacets(path)) {
           const tp = this._treeFacets.get(fk);
-          if (tp) grp.createSvg("line", { cls: ["rg-gx-tie"], attr: { x1: p.x, y1: p.y, x2: tp.x, y2: tp.y } });
+          if (!tp) continue;
+          const ln = grp.createSvg("line", { cls: ["rg-gx-tie"], attr: { x1: p.x, y1: p.y, x2: tp.x, y2: tp.y } }) as SVGLineElement;
+          (this._tieEls.get(fk) ?? this._tieEls.set(fk, []).get(fk)!).push(ln);
         }
       }
     }

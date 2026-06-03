@@ -1010,6 +1010,8 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-gx-link.rg-gx-glink { opacity: 0.1; stroke-dasharray: 3 3; } /* note → ghost: fainter, dashed (a call into the unwritten) */
 .rg-anim .rg-gx-link { transition: opacity 160ms ease, stroke 160ms ease; }
 .rg-gx-tie { stroke: var(--rg-accent); stroke-width: 1; opacity: 0.3; } /* inner-ring note → the tree facet it cites */
+.rg-anim .rg-gx-tie { transition: opacity 140ms ease, stroke-width 140ms ease; }
+.rg-gx-tie.rg-tie-hot { opacity: 0.95; stroke-width: 2; } /* hovering the gateway lights the notes tied to it */
 .rg-anim .rg-gx-links { transition: opacity 360ms ease; }
 /* ambient hover: light up the chords on the node under the cursor */
 .rg-gx-link.rg-link-hot { stroke: var(--rg-accent); stroke-width: 1.3; opacity: 0.85; }

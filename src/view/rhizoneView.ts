@@ -372,7 +372,7 @@ export class RhizoneFacetView extends ItemView {
       // ambient — everyone on the outer ring, undimmed, labels on hover only
       this._inner.clear();
       ordered.forEach((n, i) => this.place(n.path, ringXY(i, ordered.length, R_OUT), { dim: false, related: false, keystone: false }));
-      this.layoutGhosts(false);
+      this.layoutGhosts(null);
       this.drawCenter(null);
       this.drawLinks();
       return;
@@ -405,7 +405,7 @@ export class RhizoneFacetView extends ItemView {
       this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: !linked, related: false, keystone: false, linked });
     });
 
-    this.layoutGhosts(true); // ghosts dim with the rest of the periphery on focus
+    this.layoutGhosts(activeSet); // connected ghosts stay lit; the rest dim with the periphery
     this.drawCenter(ks);
     this.drawLinks();
   }
@@ -426,15 +426,21 @@ export class RhizoneFacetView extends ItemView {
     this.fanLabel(g, p);
   }
 
-  /** Lay the ghost (phantom-facet) ring at the outer edge — same placement rules as the note rings. */
-  private layoutGhosts(dim: boolean): void {
+  /**
+   * Lay the ghost (phantom-facet) ring at the outer edge — same placement rules as the note rings.
+   * In focus (activeSet given), a ghost whose calling note is in the active set stays lit + named.
+   */
+  private layoutGhosts(activeSet: Set<string> | null): void {
+    const focused = activeSet !== null;
     this._ghosts.forEach((gh, i) => {
       const g = this._ghostEls.get(gh.key);
       if (!g) return;
       const p = ringXY(i, this._ghosts.length, R_GHOST);
       this._pos.set(gh.key, p); // so chords to the notes that call this ghost can be drawn
       g.setAttribute("transform", `translate(${p.x} ${p.y})`);
-      g.classList.toggle("rg-dim", dim);
+      const linked = focused && (this._adj.get(gh.key) ?? []).some((nb) => activeSet!.has(nb));
+      g.classList.toggle("rg-dim", focused && !linked);
+      g.classList.toggle("rg-linked", linked);
       this.fanLabel(g, p);
     });
   }

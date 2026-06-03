@@ -1025,6 +1025,7 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-anim .rg-lt-path { transition: opacity 140ms ease, stroke-width 140ms ease; }
 .rg-lt-path.rg-lt-hot { opacity: 1; stroke-width: 2.4; } /* hovering a gateway lights its paths above the rest */
 .rg-lt-node { cursor: pointer; }
+.rg-lt-hit { fill: transparent; } /* invisible but receives the hover (transparent != none) */
 .rg-lt-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; }
 .rg-lt-node:hover .rg-lt-dot { fill: var(--rg-accent); }
 .rg-anim .rg-lt-node:hover .rg-lt-dot { filter: drop-shadow(0 0 6px var(--rg-accent)); }

@@ -505,6 +505,7 @@ export class RhizoneFacetView extends ItemView {
       if (!gw.facet) continue;
       const p = pos.get(gw.name)!;
       const node = grp.createSvg("g", { cls: ["rg-lt-node"], attr: { role: "button", "aria-label": gw.facet.label } });
+      node.createSvg("circle", { cls: ["rg-lt-hit"], attr: { cx: p.x, cy: p.y, r: 18 } }); // generous invisible hover target
       node.createSvg("circle", { cls: ["rg-lt-dot"], attr: { cx: p.x, cy: p.y, r: 7 } });
       // fan the label outward from the tree centre so the ten gateways don't stack on each other
       const dx = p.x - C;

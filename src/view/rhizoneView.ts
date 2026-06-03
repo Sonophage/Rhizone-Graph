@@ -60,6 +60,7 @@ export class RhizoneFacetView extends ItemView {
   private _pan: SVGElement | null = null;
   private _centerEl: SVGElement | null = null;
   private _linksEl: SVGElement | null = null;
+  private _ksTitleEl: SVGElement | null = null; // the keystone's name, fixed above the ring
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
 
@@ -159,6 +160,12 @@ export class RhizoneFacetView extends ItemView {
     this._pan = pan;
     this.attachPanZoom(svg);
 
+    // the keystone's name, pinned above the ring (fixed in the viewBox — pan/zoom don't move it)
+    this._ksTitleEl = svg.createSvg("text", {
+      cls: ["rg-gx-kstitle"],
+      attr: { x: String(C), y: "72", "text-anchor": "middle" }
+    });
+
 
     // entrance: lay the dots out in the OPPOSITE ordering, then reflow to the real one so every
     // note slides across the ring at once and the chords cross into that geometric scatter.
@@ -253,7 +260,9 @@ export class RhizoneFacetView extends ItemView {
   private layout(): void {
     const ordered = this.orderedNotes();
     const ks = this.keystone;
-    if (this._titleEl) this._titleEl.setText(ks ? displayLabel(ks.kind === "note" ? baseOf(ks.key) : ks.key) : "the vault");
+    const ksName = ks ? displayLabel(ks.kind === "note" ? baseOf(ks.key) : ks.key) : "";
+    if (this._titleEl) this._titleEl.setText(ks ? ksName : "the vault");
+    this._ksTitleEl?.setText(ksName);
     this._releaseEl?.toggleClass("is-hidden", !ks);
     this.contentEl.toggleClass("rg-rz-focused", !!ks);
 

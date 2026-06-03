@@ -929,6 +929,19 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 }
 .rg-gx-order:hover { color: var(--rg-accent); border-color: var(--rg-accent); }
 
+/* the keystone's name, pinned above the ring — so it's obvious what you summoned */
+.rg-gx-kstitle {
+  fill: var(--rg-accent);
+  font-family: var(--font-monospace, monospace);
+  font-size: 26px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  opacity: 0;
+  pointer-events: none;
+}
+.rg-rz-focused .rg-gx-kstitle { opacity: 0.92; }
+.rg-anim .rg-gx-kstitle { transition: opacity 360ms ease; }
+
 .rg-gx-note { cursor: pointer; }
 .rg-anim .rg-gx-note { transition: transform 600ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 360ms ease; }
 .rg-gx-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; }

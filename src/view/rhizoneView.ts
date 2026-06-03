@@ -413,7 +413,10 @@ export class RhizoneFacetView extends ItemView {
     this.cursor = -1;
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     this.highlightConnections(null); // reset any hover spotlight before the new state
-    if (this.keystone) this.panToCenter();
+    if (this.keystone) {
+      this.panToCenter();
+      if (this.host.animations()) this.arrivalPulse();
+    }
     // point the resident graph at the same note — tourist (Rhizone) ↔ resident (Reticular)
     if (this.keystone && this.keystone.kind === "note") this.host.openInScope(this.keystone.key);
     this.layout();
@@ -492,6 +495,13 @@ export class RhizoneFacetView extends ItemView {
   private zThreshold(): number {
     return 0.5 + (this.labelZoom / 100) * 2.5;
   }
+  /** A one-shot ring that expands from the centre when a keystone is summoned. */
+  private arrivalPulse(): void {
+    if (!this._pan) return;
+    const c = this._pan.createSvg("circle", { cls: ["rg-arrival"], attr: { cx: C, cy: C, r: 14 } });
+    c.addEventListener("animationend", () => c.remove());
+  }
+
   /** Centre the galaxy in the viewBox (after summoning, the keystone sits dead-centre). */
   private panToCenter(): void {
     this.vt.tx = C * (1 - this.vt.z);
@@ -648,10 +658,12 @@ export class RhizoneFacetView extends ItemView {
       (pathsAt.get(p.from) ?? pathsAt.set(p.from, []).get(p.from)!).push(line);
       (pathsAt.get(p.to) ?? pathsAt.set(p.to, []).get(p.to)!).push(line);
     }
+    let bloom = 0; // bloom stagger index
     for (const gw of tree.gateways) {
       if (!gw.facet) continue;
       const p = pos.get(gw.name)!;
       const node = grp.createSvg("g", { cls: ["rg-lt-node"], attr: { role: "button", "aria-label": gw.facet.label } });
+      node.style.setProperty("--rg-delay", `${bloom++ * 45}ms`); // staggered bloom
       node.createSvg("circle", { cls: ["rg-lt-hit"], attr: { cx: p.x, cy: p.y, r: 18 } }); // generous invisible hover target
       node.createSvg("circle", { cls: ["rg-lt-dot"], attr: { cx: p.x, cy: p.y, r: 7 } });
       // fan the label outward from the tree centre so the ten gateways don't stack on each other
@@ -725,7 +737,10 @@ export class RhizoneFacetView extends ItemView {
         for (const fk of this.host.noteFacets(path)) {
           const tp = this._treeFacets.get(fk);
           if (!tp) continue;
-          const ln = grp.createSvg("line", { cls: ["rg-gx-tie"], attr: { x1: p.x, y1: p.y, x2: tp.x, y2: tp.y } }) as SVGLineElement;
+          const ln = grp.createSvg("line", {
+            cls: ["rg-gx-tie"],
+            attr: { x1: p.x, y1: p.y, x2: tp.x, y2: tp.y, pathLength: "1" } // pathLength=1 → CSS can draw it in
+          }) as SVGLineElement;
           (this._tieEls.get(fk) ?? this._tieEls.set(fk, []).get(fk)!).push(ln); // by facet, for gateway hover
           (this._linkEls.get(path) ?? this._linkEls.set(path, []).get(path)!).push(ln); // by note, for note hover
         }

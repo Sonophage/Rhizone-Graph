@@ -1023,6 +1023,32 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-door-conn-none { border: none; font-style: italic; }
 .rg-door-conn-more { color: var(--rg-accent); border-color: var(--rg-accent); }
 
+/* ── phase 5: motion (all gated under .rg-anim) ── */
+/* gravity spring — rare kin overshoot into the inner ring as the keystone pulls them in */
+.rg-anim .rg-gx-note.rg-related { transition: transform 560ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 360ms ease; }
+/* bloom — the local tree's gateways pop in, staggered */
+.rg-anim .rg-lt-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rg-pop 380ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: var(--rg-delay, 0ms);
+}
+@keyframes rg-pop { from { transform: scale(0); } to { transform: scale(1); } }
+/* path-of-return — ties draw in from the note up to its gateway */
+.rg-anim .rg-gx-tie { stroke-dasharray: 1; stroke-dashoffset: 1; animation: rg-draw 480ms ease forwards; }
+@keyframes rg-draw { to { stroke-dashoffset: 0; } }
+/* arrival — a ring expands from the centre on summon */
+.rg-arrival {
+  fill: none;
+  stroke: var(--rg-accent);
+  stroke-width: 3;
+  transform-box: fill-box;
+  transform-origin: center;
+  pointer-events: none;
+  animation: rg-arrival 620ms ease-out forwards;
+}
+@keyframes rg-arrival { from { transform: scale(0.25); opacity: 0.85; } to { transform: scale(8); opacity: 0; } }
+
 .rg-gx-note { cursor: pointer; }
 /* ghost ring: phantom facets (referenced, never written) — normal dots, just faded */
 .rg-gx-ghost { opacity: 0.4; }

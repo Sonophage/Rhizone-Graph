@@ -958,8 +958,8 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 /* ghost ring: phantom facets (referenced, never written) — normal dots, just faded */
 .rg-gx-ghost { opacity: 0.4; }
 .rg-gx-ghost:hover { opacity: 0.85; }
-/* ghosts are named by default (faded with the dot) — focus still hides the dimmed ones */
-.rg-gx-ghost .rg-gx-label { font-style: italic; opacity: 1; pointer-events: auto; }
+/* same label rules as the note rings (hover / connected / zoom) — ghosts just render italic */
+.rg-gx-ghost .rg-gx-label { font-style: italic; }
 .rg-anim .rg-gx-ghost:hover .rg-gx-dot { filter: drop-shadow(0 0 5px var(--rg-accent)); }
 .rg-anim .rg-gx-note { transition: transform 600ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 360ms ease; }
 .rg-gx-dot { fill: var(--text-normal, #fff); stroke: var(--rg-bg); stroke-width: 1.5; }

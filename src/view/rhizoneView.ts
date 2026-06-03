@@ -1,4 +1,4 @@
-import { ItemView, type WorkspaceLeaf, type App } from "obsidian";
+import { ItemView, debounce, type WorkspaceLeaf, type App } from "obsidian";
 import { buildTreeFromGraph, type Tree } from "../engine/tree.ts";
 import { subgraph, type FacetGraph } from "../engine/facetGraph.ts";
 
@@ -31,6 +31,8 @@ export interface RhizoneHost {
   noteLinks(): Array<[string, string]>;
   /** path → facet-community label (for cluster ordering). */
   noteClusters(): Record<string, string>;
+  /** Search filename + body; returns the best candidate doors (name-match weighted over body). */
+  searchNotes(query: string, limit?: number): Promise<{ path: string; basename: string }[]>;
   /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
   openInScope(path: string): void;
   /** Point an already-open Reticular Scope at a note without revealing it (live highlight sync). */
@@ -69,6 +71,9 @@ export class RhizoneFacetView extends ItemView {
   private _linksEl: SVGElement | null = null;
   private _ksTitleEl: SVGElement | null = null; // the keystone's name, fixed above the ring
   private _scanTitleEl: SVGElement | null = null; // the note under the roam cursor, shown in the ring's centre
+  private _searchEl: HTMLInputElement | null = null;
+  private _resultsEl: HTMLElement | null = null; // search results panel (the three candidate doors)
+  private _searchSeq = 0; // guards against out-of-order async search results
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
 
@@ -168,6 +173,25 @@ export class RhizoneFacetView extends ItemView {
     });
     this._releaseEl = bezel.createSpan({ cls: "rg-rz-back", text: "‹ release", attr: { role: "button" } });
     this._releaseEl.onClickEvent(() => this.release());
+
+    // ── search: find a door (filename + body) → pick from three; or wander to a rare one ──
+    const search = bezel.createEl("input", {
+      cls: "rg-gx-search",
+      attr: { type: "search", placeholder: "find a door…", spellcheck: "false" }
+    });
+    this._searchEl = search;
+    const wander = bezel.createSpan({ cls: "rg-gx-wander", text: "⚄ wander", attr: { role: "button", "aria-label": "Wander to a rare door" } });
+    wander.onClickEvent(() => this.wander());
+    const debouncedSearch = debounce((q: string) => void this.runSearch(q), 200, false);
+    search.addEventListener("input", () => debouncedSearch(search.value));
+    search.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape") (search.value = "", this.clearResults());
+      else if (e.key === "Enter") {
+        const first = this._resultsEl?.querySelector<HTMLElement>(".rg-sr-pick");
+        first?.click();
+      }
+    });
+    this._resultsEl = root.createDiv({ cls: "rg-gx-results", attr: { "aria-hidden": "true" } });
 
     // ── stage / svg ──
     const stage = root.createDiv({ cls: "rg-tree-stage" });
@@ -289,6 +313,112 @@ export class RhizoneFacetView extends ItemView {
       .filter((n) => n.phantom)
       .sort((a, b) => a.label.localeCompare(b.label))
       .map((n) => ({ key: n.key, label: n.label }));
+  }
+
+  // ── search: three candidate doors + how they connect ──
+  private async runSearch(query: string): Promise<void> {
+    if (!query.trim()) return this.clearResults();
+    const seq = ++this._searchSeq;
+    const hits = await this.host.searchNotes(query, 3);
+    if (seq !== this._searchSeq) return; // a newer query landed first
+    this.renderCandidates(hits);
+  }
+
+  private clearResults(): void {
+    this._searchSeq++;
+    if (!this._resultsEl) return;
+    this._resultsEl.empty();
+    this._resultsEl.setAttr("aria-hidden", "true");
+  }
+
+  /** How two notes connect: a direct link, else the rarest facet they share, else nothing. */
+  private connectionBetween(a: string, b: string): { kind: "link" | "facet"; label: string } | null {
+    if ((this._adj.get(a) ?? []).includes(b)) return { kind: "link", label: "linked" };
+    const fb = new Set(this.host.noteFacets(b));
+    const g = this.graph();
+    let best: { key: string; df: number } | null = null;
+    for (const fk of this.host.noteFacets(a)) {
+      if (!fb.has(fk)) continue;
+      const df = g.nodes.get(fk)?.df ?? Infinity;
+      if (!best || df < best.df) best = { key: fk, df };
+    }
+    return best ? { kind: "facet", label: displayLabel(g.nodes.get(best.key)?.label ?? best.key) } : null;
+  }
+
+  /** Render the candidate doors as a tiny graph: three notes + how (if) they connect. Pick to enter. */
+  private renderCandidates(hits: { path: string; basename: string }[]): void {
+    const host = this._resultsEl;
+    if (!host) return;
+    host.empty();
+    if (!hits.length) {
+      host.createDiv({ cls: "rg-sr-empty", text: "no doors found" });
+      host.setAttr("aria-hidden", "false");
+      return;
+    }
+    host.setAttr("aria-hidden", "false");
+    const SW = 280;
+    const SH = 168;
+    const svg = host.createSvg("svg", { cls: ["rg-sr-svg"], attr: { viewBox: `0 0 ${SW} ${SH}` } });
+    const spots =
+      hits.length === 1
+        ? [{ x: 140, y: 84 }]
+        : hits.length === 2
+          ? [{ x: 72, y: 84 }, { x: 208, y: 84 }]
+          : [{ x: 140, y: 38 }, { x: 58, y: 132 }, { x: 222, y: 132 }];
+
+    // edges first (behind the nodes)
+    for (let i = 0; i < hits.length; i++) {
+      for (let j = i + 1; j < hits.length; j++) {
+        const c = this.connectionBetween(hits[i].path, hits[j].path);
+        if (!c) continue;
+        const a = spots[i];
+        const b = spots[j];
+        svg.createSvg("line", {
+          cls: c.kind === "link" ? ["rg-sr-edge", "rg-sr-edge-link"] : ["rg-sr-edge"],
+          attr: { x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+        });
+        svg.createSvg("text", {
+          cls: ["rg-sr-edgelabel"],
+          attr: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 3, "text-anchor": "middle" }
+        }).setText(trunc(c.label, 16));
+      }
+    }
+    // nodes
+    hits.forEach((h, i) => {
+      const p = spots[i];
+      const node = svg.createSvg("g", { cls: ["rg-sr-pick"], attr: { role: "button", "aria-label": h.basename } });
+      node.createSvg("circle", { cls: ["rg-sr-dot"], attr: { cx: p.x, cy: p.y, r: 6 } });
+      node.createSvg("text", { cls: ["rg-sr-label"], attr: { x: p.x, y: p.y + 20, "text-anchor": "middle" } }).setText(
+        trunc(displayLabel(h.basename), 22)
+      );
+      node.addEventListener("click", () => {
+        if (this._searchEl) this._searchEl.value = "";
+        this.clearResults();
+        this.setKeystone({ kind: "note", key: h.path });
+      });
+    });
+  }
+
+  /** Wander: drop onto a random rare door (a note whose rarest facet is rarest). */
+  private wander(): void {
+    const g = this.graph();
+    const scored = this.notes
+      .map((n) => {
+        let min = Infinity;
+        for (const fk of this.host.noteFacets(n.path)) {
+          const df = g.nodes.get(fk)?.df ?? Infinity;
+          if (df < min) min = df;
+        }
+        return { path: n.path, min };
+      })
+      .filter((x) => x.min < Infinity)
+      .sort((a, b) => a.min - b.min);
+    if (!scored.length) return;
+    const pool = scored.slice(0, Math.max(1, Math.floor(scored.length / 4))); // the rarest quartile
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    if (this._searchEl) this._searchEl.value = "";
+    this.clearResults();
+    this.setKeystone({ kind: "note", key: pick.path });
   }
 
   private setKeystone(k: { kind: "note" | "facet"; key: string }): void {

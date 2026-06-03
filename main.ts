@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS: RGSettings = {
 export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, RhizoneHost {
   private index = new FacetIndex();
   private indexBuilt = false;
+  private _contentCache: Map<string, string> | null = null; // path → lowercased body, for search
   private _settings: RGSettings = DEFAULT_SETTINGS;
   readonly previewOwner = this;
 
@@ -44,6 +45,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     this.index = new FacetIndex();
     this.index.addAll(buildRecords(this.app));
     this.indexBuilt = true;
+    this._contentCache = null; // bodies may have changed
     this.refreshView();
   }
 
@@ -115,6 +117,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       this.app.metadataCache.on("changed", (file) => {
         if (file.extension !== "md") return;
         this.index.update(recordFromCache(file.path, file.basename, this.app.metadataCache.getFileCache(file)));
+        this._contentCache = null; // body changed → search cache stale
         this.refreshView();
       })
     );
@@ -200,6 +203,43 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return [...rarest]
       .map(([path, rarestDf]) => ({ path, basename: this.index.get(path)?.basename ?? path, rarestDf }))
       .sort((a, b) => a.rarestDf - b.rarestDf || a.basename.localeCompare(b.basename));
+  }
+
+  /** Build (once) a lowercased body cache for content search. */
+  private async ensureContentCache(): Promise<Map<string, string>> {
+    if (this._contentCache) return this._contentCache;
+    const cache = new Map<string, string>();
+    await Promise.all(
+      this.app.vault.getMarkdownFiles().map(async (f) => {
+        try {
+          cache.set(f.path, (await this.app.vault.cachedRead(f)).toLowerCase());
+        } catch {
+          /* unreadable — skip */
+        }
+      })
+    );
+    this._contentCache = cache;
+    return cache;
+  }
+
+  /** Search filename + body; returns the best candidate doors, name-match weighted over body-match. */
+  async searchNotes(query: string, limit = 3): Promise<{ path: string; basename: string }[]> {
+    this.ensureIndex();
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const content = await this.ensureContentCache();
+    const scored: { path: string; basename: string; score: number }[] = [];
+    for (const r of this.index.all()) {
+      const name = r.basename.toLowerCase();
+      let score = 0;
+      if (name === q) score += 100;
+      else if (name.startsWith(q)) score += 60;
+      else if (name.includes(q)) score += 40;
+      if ((content.get(r.path) ?? "").includes(q)) score += 12;
+      if (score > 0) scored.push({ path: r.path, basename: r.basename, score });
+    }
+    scored.sort((a, b) => b.score - a.score || a.basename.localeCompare(b.basename));
+    return scored.slice(0, limit).map(({ path, basename }) => ({ path, basename }));
   }
 
   /** Direct note→note links/connections across the whole vault (the ambient chord web). */

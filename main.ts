@@ -249,6 +249,8 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     try {
       const body = (await this.app.vault.cachedRead(f))
         .replace(/^---\n[\s\S]*?\n---\n?/, "") // frontmatter
+        .replace(/```[\s\S]*?```/g, " ") // fenced code (dataviewjs etc.)
+        .replace(/%%[\s\S]*?%%/g, " ") // obsidian comments
         .replace(/!?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1") // wikilinks → text
         .replace(/[#>*_`~]+/g, " ")
         .replace(/\s+/g, " ")

@@ -249,17 +249,9 @@ export class RhizoneFacetView extends ItemView {
         e.stopPropagation();
         this.setKeystone({ kind: "note", key: n.path });
       });
-      g.addEventListener("mouseover", (e) => {
+      g.addEventListener("mouseover", () => {
         this._hover = n.path;
         this.highlightConnections(n.path);
-        this.host.app.workspace.trigger("hover-link", {
-          event: e,
-          source: "reticular-graph",
-          hoverParent: this,
-          targetEl: g,
-          linktext: n.basename,
-          sourcePath: ""
-        });
       });
       g.addEventListener("mouseout", () => {
         if (this._hover === n.path) this._hover = null;

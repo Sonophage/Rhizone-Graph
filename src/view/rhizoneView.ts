@@ -64,6 +64,7 @@ export class RhizoneFacetView extends ItemView {
   private _releaseEl: HTMLElement | null = null;
 
   private _links: Array<[string, string]> = []; // cached vault link web (chords)
+  private _linkEls = new Map<string, SVGLineElement[]>(); // path → its chord <line>s, for hover-brighten
   private _pos = new Map<string, { x: number; y: number }>(); // each note's current placed position
   private _inner = new Set<string>(); // notes currently on the inner ring (focused state)
   private _treeFacets = new Map<string, { x: number; y: number }>(); // local-tree Sephira facet positions
@@ -177,7 +178,8 @@ export class RhizoneFacetView extends ItemView {
         e.stopPropagation();
         this.setKeystone({ kind: "note", key: n.path });
       });
-      g.addEventListener("mouseover", (e) =>
+      g.addEventListener("mouseover", (e) => {
+        this.hotLinks(n.path, true);
         this.host.app.workspace.trigger("hover-link", {
           event: e,
           source: "reticular-graph",
@@ -185,8 +187,9 @@ export class RhizoneFacetView extends ItemView {
           targetEl: g,
           linktext: n.basename,
           sourcePath: ""
-        })
-      );
+        });
+      });
+      g.addEventListener("mouseout", () => this.hotLinks(n.path, false));
       this._noteEls.set(n.path, g as SVGGElement);
     }
 
@@ -370,13 +373,22 @@ export class RhizoneFacetView extends ItemView {
     const grp = this._pan.createSvg("g", { cls: ["rg-gx-links"] });
     this._pan.insertBefore(grp, this._pan.firstChild); // behind the note dots + the centre tree
     this._linksEl = grp;
+    this._linkEls.clear();
+
+    // focused: dim every chord but the ones touching the keystone or its inner ring (active here & now)
+    const ksNote = this.keystone && this.keystone.kind === "note" ? this.keystone.key : null;
+    const active = (p: string): boolean => p === ksNote || this._inner.has(p);
+    grp.classList.toggle("rg-focused", !!this.keystone);
 
     // chords: every direct link/connection whose endpoints are both placed
     for (const [a, b] of this._links) {
       const pa = this._pos.get(a);
       const pb = this._pos.get(b);
       if (!pa || !pb) continue;
-      grp.createSvg("line", { cls: ["rg-gx-link"], attr: { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y } });
+      const ln = grp.createSvg("line", { cls: ["rg-gx-link"], attr: { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y } }) as SVGLineElement;
+      (this._linkEls.get(a) ?? this._linkEls.set(a, []).get(a)!).push(ln);
+      (this._linkEls.get(b) ?? this._linkEls.set(b, []).get(b)!).push(ln);
+      if (this.keystone && (active(a) || active(b))) ln.classList.add("rg-link-active");
     }
 
     // ties: inner-ring note → each local-tree facet it cites
@@ -390,6 +402,12 @@ export class RhizoneFacetView extends ItemView {
         }
       }
     }
+  }
+
+  /** Brighten the chords touching a note (ambient hover only — focus has its own active set). */
+  private hotLinks(path: string, on: boolean): void {
+    if (this.keystone) return;
+    for (const ln of this._linkEls.get(path) ?? []) ln.classList.toggle("rg-link-hot", on);
   }
 
   private orderedNotes(): NoteRef[] {

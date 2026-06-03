@@ -967,8 +967,14 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-anim .rg-gx-note.rg-keystone .rg-gx-dot { filter: drop-shadow(0 0 9px var(--rg-accent)); }
 /* connecting lines, laid behind the dots */
 .rg-gx-link { stroke: var(--text-normal, #fff); stroke-width: 0.8; opacity: 0.07; } /* the vault's direct links, as faint chords */
+.rg-anim .rg-gx-link { transition: opacity 160ms ease, stroke 160ms ease; }
 .rg-gx-tie { stroke: var(--rg-accent); stroke-width: 1; opacity: 0.3; } /* inner-ring note → the tree facet it cites */
 .rg-anim .rg-gx-links { transition: opacity 360ms ease; }
+/* ambient hover: light up the chords on the node under the cursor */
+.rg-gx-link.rg-link-hot { stroke: var(--rg-accent); stroke-width: 1.3; opacity: 0.85; }
+/* focused: dim every chord but the ones live right now (keystone + its inner ring) */
+.rg-gx-links.rg-focused .rg-gx-link { opacity: 0.02; }
+.rg-gx-links.rg-focused .rg-gx-link.rg-link-active { stroke: var(--rg-accent); opacity: 0.45; }
 /* the local Etz Chaim, rebuilt around the keystone, fading in at the centre */
 .rg-anim .rg-gx-center { animation: rg-fade-in 320ms ease; }
 @keyframes rg-fade-in { from { opacity: 0; } to { opacity: 1; } }

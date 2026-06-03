@@ -32,6 +32,8 @@ export interface RhizoneHost {
   noteClusters(): Record<string, string>;
   /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
   openInScope(path: string): void;
+  /** Point an already-open Reticular Scope at a note without revealing it (live highlight sync). */
+  syncScope(path: string): void;
   /** Run motion, overriding OS reduce-motion (persisted, shared with the Scope). */
   animations(): boolean;
 }
@@ -159,9 +161,13 @@ export class RhizoneFacetView extends ItemView {
     });
     svg.addEventListener("click", (e) => {
       if (e.target !== svg) return; // a node/label handled the click itself
-      // empty centre + something under the pointer → summon it (forgiving of the tiny dots)
-      if (!this.keystone && this._hover) this.setKeystone({ kind: "note", key: this._hover });
-      else this.release(); // otherwise, clicking the void lets go
+      if (!this.keystone) {
+        // empty centre → summon the highlighted (scrolled-to) note, else whatever's under the pointer
+        const ordered = this.orderedNotes();
+        const target = this.cursor >= 0 && ordered[this.cursor] ? ordered[this.cursor].path : this._hover;
+        if (target) return void this.setKeystone({ kind: "note", key: target });
+      }
+      this.release(); // otherwise, clicking the void lets go
     });
     svg.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === "ArrowDown") (e.preventDefault(), this.moveCursor(1));
@@ -264,6 +270,7 @@ export class RhizoneFacetView extends ItemView {
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     this._noteEls.get(note.path)?.classList.add("rg-cursor");
     this.highlightConnections(note.path); // light its chords + reveal its connected notes' labels
+    this.host.syncScope(note.path); // the resident graph tracks whatever's highlighted
     this.updateScanTitle();
   }
 

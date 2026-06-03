@@ -359,4 +359,9 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     (leaf.view as ReticularView).setFocus(path);
   }
 
+  /** Point an already-open Reticular Scope at a note WITHOUT opening/revealing it (live highlight sync). */
+  syncScope(path: string): void {
+    for (const v of this.getScopeViews()) v.setFocus(path);
+  }
+
 }

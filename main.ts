@@ -202,6 +202,15 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       .sort((a, b) => a.rarestDf - b.rarestDf || a.basename.localeCompare(b.basename));
   }
 
+  /** Direct note→note links/connections across the whole vault (the ambient chord web). */
+  noteLinks(): Array<[string, string]> {
+    this.ensureIndex();
+    return neighborEdges(
+      [...this.index.all()].map((r) => r.path),
+      this.index
+    );
+  }
+
   /** Each note's cluster = the facet-community most represented among its facets. */
   noteClusters(): Record<string, string> {
     this.ensureIndex();

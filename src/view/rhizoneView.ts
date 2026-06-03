@@ -26,6 +26,8 @@ export interface RhizoneHost {
   noteFacets(path: string): string[];
   /** Notes sharing any of `facetKeys`, rarity-ranked. */
   relatedNotes(facetKeys: string[], exclude?: string): { path: string; basename: string; rarestDf: number }[];
+  /** Direct note→note links/connections across the whole vault (the ambient chord web). */
+  noteLinks(): Array<[string, string]>;
   /** path → facet-community label (for cluster ordering). */
   noteClusters(): Record<string, string>;
   /** Run motion, overriding OS reduce-motion (persisted, shared with the Scope). */
@@ -57,8 +59,14 @@ export class RhizoneFacetView extends ItemView {
   private _noteEls = new Map<string, SVGGElement>();
   private _pan: SVGElement | null = null;
   private _centerEl: SVGElement | null = null;
+  private _linksEl: SVGElement | null = null;
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
+
+  private _links: Array<[string, string]> = []; // cached vault link web (chords)
+  private _pos = new Map<string, { x: number; y: number }>(); // each note's current placed position
+  private _inner = new Set<string>(); // notes currently on the inner ring (focused state)
+  private _treeFacets = new Map<string, { x: number; y: number }>(); // local-tree Sephira facet positions
 
   constructor(leaf: WorkspaceLeaf, host: RhizoneHost) {
     super(leaf);
@@ -92,10 +100,13 @@ export class RhizoneFacetView extends ItemView {
     root.toggleClass("rg-anim", this.host.animations());
     this._noteEls.clear();
     this._centerEl = null;
+    this._linksEl = null;
+    this._pos.clear();
     this._graph = null; // the index may have changed; rebuild the graph lazily
 
     try {
       this.notes = this.host.allNotes();
+      this._links = this.host.noteLinks();
       this.clusters = this.order === "cluster" ? this.host.noteClusters() : {};
     } catch (e) {
       root.createDiv({ cls: "rg-error" }).setText("Rhizone error:\n" + String((e as Error)?.stack ?? e));
@@ -244,8 +255,10 @@ export class RhizoneFacetView extends ItemView {
 
     if (!ks) {
       // ambient — everyone on the outer ring, undimmed, labels on hover only
+      this._inner.clear();
       ordered.forEach((n, i) => this.place(n.path, ringXY(i, ordered.length, R_OUT), { dim: false, related: false, keystone: false }));
       this.drawCenter(null);
+      this.drawLinks();
       return;
     }
 
@@ -254,6 +267,7 @@ export class RhizoneFacetView extends ItemView {
     const ksNote = ks.kind === "note" ? ks.key : null;
     const related = this.host.relatedNotes(baseFacets, ksNote ?? undefined).slice(0, INNER_CAP);
     const innerSet = new Set(related.map((r) => r.path));
+    this._inner = innerSet;
 
     if (ksNote) this.place(ksNote, { x: C, y: C }, { dim: false, related: false, keystone: true });
     related.forEach((r, i) => {
@@ -264,11 +278,13 @@ export class RhizoneFacetView extends ItemView {
     rest.forEach((n, i) => this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: true, related: false, keystone: false }));
 
     this.drawCenter(ks);
+    this.drawLinks();
   }
 
   private place(path: string, p: { x: number; y: number }, s: { dim: boolean; related: boolean; keystone: boolean }): void {
     const g = this._noteEls.get(path);
     if (!g) return;
+    this._pos.set(path, p);
     g.setAttribute("transform", `translate(${p.x} ${p.y})`);
     g.classList.toggle("rg-dim", s.dim);
     g.classList.toggle("rg-related", s.related);
@@ -291,6 +307,7 @@ export class RhizoneFacetView extends ItemView {
   private drawCenter(ks: { kind: "note" | "facet"; key: string } | null): void {
     this._centerEl?.remove();
     this._centerEl = null;
+    this._treeFacets.clear();
     if (!ks || !this._pan) return;
 
     const g = this.graph();
@@ -311,7 +328,12 @@ export class RhizoneFacetView extends ItemView {
     const ty = (y: number): number => C + (y - 0.5) * BOX;
 
     const pos = new Map<string, { x: number; y: number }>();
-    for (const gw of tree.gateways) if (gw.facet) pos.set(gw.name, { x: tx(gw.x), y: ty(gw.y) });
+    for (const gw of tree.gateways) {
+      if (!gw.facet) continue;
+      const p = { x: tx(gw.x), y: ty(gw.y) };
+      pos.set(gw.name, p);
+      this._treeFacets.set(gw.facet.key, p); // so inner-ring notes can tie to their facet node
+    }
     for (const p of tree.paths) {
       const a = pos.get(p.from);
       const b = pos.get(p.to);
@@ -332,6 +354,41 @@ export class RhizoneFacetView extends ItemView {
         e.stopPropagation();
         this.setKeystone({ kind: "facet", key });
       });
+    }
+  }
+
+  /**
+   * Connecting lines, redrawn at the notes' current positions and laid BEHIND the dots:
+   *   • the vault's direct note→note links/connections, as faint chords (ring ↔ ring);
+   *   • when focused, each inner-ring note tied to the local-tree facet node it actually cites
+   *     (its attachment to the structure — never to the keystone itself).
+   */
+  private drawLinks(): void {
+    this._linksEl?.remove();
+    this._linksEl = null;
+    if (!this._pan) return;
+    const grp = this._pan.createSvg("g", { cls: ["rg-gx-links"] });
+    this._pan.insertBefore(grp, this._pan.firstChild); // behind the note dots + the centre tree
+    this._linksEl = grp;
+
+    // chords: every direct link/connection whose endpoints are both placed
+    for (const [a, b] of this._links) {
+      const pa = this._pos.get(a);
+      const pb = this._pos.get(b);
+      if (!pa || !pb) continue;
+      grp.createSvg("line", { cls: ["rg-gx-link"], attr: { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y } });
+    }
+
+    // ties: inner-ring note → each local-tree facet it cites
+    if (this.keystone && this._treeFacets.size) {
+      for (const path of this._inner) {
+        const p = this._pos.get(path);
+        if (!p) continue;
+        for (const fk of this.host.noteFacets(path)) {
+          const tp = this._treeFacets.get(fk);
+          if (tp) grp.createSvg("line", { cls: ["rg-gx-tie"], attr: { x1: p.x, y1: p.y, x2: tp.x, y2: tp.y } });
+        }
+      }
     }
   }
 

@@ -73,8 +73,9 @@ export class RhizoneFacetView extends ItemView {
   private _releaseEl: HTMLElement | null = null;
 
   private _links: Array<[string, string]> = []; // cached vault link web (chords)
-  private _linkEls = new Map<string, SVGLineElement[]>(); // path → its chord <line>s, for hover-brighten
-  private _adj = new Map<string, string[]>(); // path → directly linked paths (for "show connected labels")
+  private _ghostLinks: Array<[string, string]> = []; // [ghostKey, notePath] — a note that calls a phantom facet
+  private _linkEls = new Map<string, SVGLineElement[]>(); // key → its chord <line>s, for hover-brighten
+  private _adj = new Map<string, string[]>(); // key → directly linked keys (notes + ghosts, for "show connected labels")
   private _hover: string | null = null; // note currently under the pointer (ambient)
   private _pos = new Map<string, { x: number; y: number }>(); // each note's current placed position
   private _inner = new Set<string>(); // notes currently on the inner ring (focused state)
@@ -125,6 +126,15 @@ export class RhizoneFacetView extends ItemView {
       for (const [a, b] of this._links) {
         (this._adj.get(a) ?? this._adj.set(a, []).get(a)!).push(b);
         (this._adj.get(b) ?? this._adj.set(b, []).get(b)!).push(a);
+      }
+      // a note "connects" to a ghost it calls (wikilinks a never-written target)
+      this._ghostLinks = [];
+      for (const gh of this._ghosts) {
+        for (const nf of this.host.notesForFacet(gh.key)) {
+          this._ghostLinks.push([gh.key, nf.path]);
+          (this._adj.get(gh.key) ?? this._adj.set(gh.key, []).get(gh.key)!).push(nf.path);
+          (this._adj.get(nf.path) ?? this._adj.set(nf.path, []).get(nf.path)!).push(gh.key);
+        }
       }
       this.clusters = this.order === "cluster" ? this.host.noteClusters() : {};
     } catch (e) {
@@ -246,6 +256,8 @@ export class RhizoneFacetView extends ItemView {
         e.stopPropagation();
         this.setKeystone({ kind: "facet", key: gh.key }); // enter the unwritten door
       });
+      g.addEventListener("mouseover", () => this.highlightConnections(gh.key));
+      g.addEventListener("mouseout", () => this.highlightConnections(null));
       this._ghostEls.set(gh.key, g as SVGGElement);
     }
 
@@ -312,9 +324,11 @@ export class RhizoneFacetView extends ItemView {
   private highlightConnections(path: string | null): void {
     this._linksEl?.querySelectorAll(".rg-link-hot").forEach((el) => el.classList.remove("rg-link-hot"));
     this._noteEls.forEach((g) => g.classList.remove("rg-near"));
+    this._ghostEls.forEach((g) => g.classList.remove("rg-near"));
     if (!path || this.keystone) return;
     for (const ln of this._linkEls.get(path) ?? []) ln.classList.add("rg-link-hot");
-    for (const nb of this._adj.get(path) ?? []) this._noteEls.get(nb)?.classList.add("rg-near");
+    for (const nb of this._adj.get(path) ?? [])
+      (this._noteEls.get(nb) ?? this._ghostEls.get(nb))?.classList.add("rg-near");
   }
 
   /** Mirror the note under the roam cursor into the ring's centre (ambient only). */
@@ -418,6 +432,7 @@ export class RhizoneFacetView extends ItemView {
       const g = this._ghostEls.get(gh.key);
       if (!g) return;
       const p = ringXY(i, this._ghosts.length, R_GHOST);
+      this._pos.set(gh.key, p); // so chords to the notes that call this ghost can be drawn
       g.setAttribute("transform", `translate(${p.x} ${p.y})`);
       g.classList.toggle("rg-dim", dim);
       this.fanLabel(g, p);
@@ -519,16 +534,20 @@ export class RhizoneFacetView extends ItemView {
     const active = (p: string): boolean => p === ksNote || this._inner.has(p);
     grp.classList.toggle("rg-focused", !!this.keystone);
 
-    // chords: every direct link/connection whose endpoints are both placed
-    for (const [a, b] of this._links) {
+    const drawEdge = (a: string, b: string, ghost: boolean): void => {
       const pa = this._pos.get(a);
       const pb = this._pos.get(b);
-      if (!pa || !pb) continue;
-      const ln = grp.createSvg("line", { cls: ["rg-gx-link"], attr: { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y } }) as SVGLineElement;
+      if (!pa || !pb) return;
+      const cls = ghost ? ["rg-gx-link", "rg-gx-glink"] : ["rg-gx-link"];
+      const ln = grp.createSvg("line", { cls, attr: { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y } }) as SVGLineElement;
       (this._linkEls.get(a) ?? this._linkEls.set(a, []).get(a)!).push(ln);
       (this._linkEls.get(b) ?? this._linkEls.set(b, []).get(b)!).push(ln);
       if (this.keystone && (active(a) || active(b))) ln.classList.add("rg-link-active");
-    }
+    };
+
+    // chords: the vault's note→note links, plus each note→ghost call (a note's unwritten target)
+    for (const [a, b] of this._links) drawEdge(a, b, false);
+    for (const [a, b] of this._ghostLinks) drawEdge(a, b, true);
 
     // ties: inner-ring note → each local-tree facet it cites
     if (this.keystone && this._treeFacets.size) {

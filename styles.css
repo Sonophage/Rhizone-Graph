@@ -1056,6 +1056,8 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 .rg-gx-note.rg-enter { opacity: 0; } /* fade in as the dots fly out from centre */
 .rg-gx-note.rg-dim { opacity: 0.28; }
 .rg-gx-note.rg-dim:hover { opacity: 0.7; }
+/* spotlight: with the tree in view, hovering a node dims everything but it + its connections */
+.rg-spotlight .rg-gx-note:not(.rg-on) { opacity: 0.07; }
 .rg-gx-note.rg-cursor .rg-gx-dot {
   fill: var(--rg-accent);
   transform: scale(2);

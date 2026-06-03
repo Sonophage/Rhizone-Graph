@@ -4,11 +4,11 @@ import { subgraph, type FacetGraph } from "../engine/facetGraph.ts";
 
 export const RHIZONE_FACET_VIEW_TYPE = "rhizone-facet";
 
-const VIEW = 1400; // viewBox VIEW×VIEW; CSS scales to the pane, pan/zoom via the transform group
+const VIEW = 1600; // viewBox VIEW×VIEW; CSS scales to the pane, pan/zoom via the transform group
 const C = VIEW / 2;
-const R_OUT = 580; // the ever-present outer ring of all notes
-const R_GHOST = 670; // the outermost ring: ghost notes (phantom facets — referenced, never written)
-const R_IN = 250; // the tight inner ring of notes summoned by the keystone
+const R_OUT = 680; // the ever-present outer ring of all notes
+const R_GHOST = 770; // the outermost ring: ghost notes (phantom facets — referenced, never written)
+const R_IN = 290; // the tight inner ring of notes summoned by the keystone
 const INNER_CAP = 30; // most related notes pulled inward at once
 const DOT = 5;
 
@@ -403,6 +403,7 @@ export class RhizoneFacetView extends ItemView {
     this.keystone = same ? null : k;
     this.cursor = -1;
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
+    this.highlightConnections(null); // reset any hover spotlight before the new state
     if (this.keystone) this.panToCenter();
     // point the resident graph at the same note — tourist (Rhizone) ↔ resident (Reticular)
     if (this.keystone && this.keystone.kind === "note") this.host.openInScope(this.keystone.key);
@@ -411,6 +412,7 @@ export class RhizoneFacetView extends ItemView {
   private release(): void {
     if (!this.keystone) return;
     this.keystone = null;
+    this.highlightConnections(null); // drop the spotlight
     this.layout();
   }
 
@@ -431,12 +433,19 @@ export class RhizoneFacetView extends ItemView {
   /** Ambient: light a note's chords and reveal the labels of the notes it's connected to. */
   private highlightConnections(path: string | null): void {
     this._linksEl?.querySelectorAll(".rg-link-hot").forEach((el) => el.classList.remove("rg-link-hot"));
-    this._noteEls.forEach((g) => g.classList.remove("rg-near"));
-    this._ghostEls.forEach((g) => g.classList.remove("rg-near"));
+    this._noteEls.forEach((g) => g.classList.remove("rg-near", "rg-on"));
+    this._ghostEls.forEach((g) => g.classList.remove("rg-near", "rg-on"));
+    this.contentEl.removeClass("rg-spotlight");
     if (!path) return; // works in focus too: hover any ring node to light its route
+    const at = (k: string): SVGGElement | undefined => this._noteEls.get(k) ?? this._ghostEls.get(k);
     for (const ln of this._linkEls.get(path) ?? []) ln.classList.add("rg-link-hot");
-    for (const nb of this._adj.get(path) ?? [])
-      (this._noteEls.get(nb) ?? this._ghostEls.get(nb))?.classList.add("rg-near");
+    for (const nb of this._adj.get(path) ?? []) at(nb)?.classList.add("rg-near", "rg-on");
+    if (this.keystone) {
+      // tree in view → spotlight: dim everything but the hovered node, its neighbours, and the keystone
+      this.contentEl.addClass("rg-spotlight");
+      at(path)?.classList.add("rg-on");
+      if (this.keystone.kind === "note") this._noteEls.get(this.keystone.key)?.classList.add("rg-on");
+    }
   }
 
   /** Mirror the note under the roam cursor into the ring's centre (ambient only). */

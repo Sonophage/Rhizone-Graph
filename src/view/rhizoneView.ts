@@ -61,6 +61,7 @@ export class RhizoneFacetView extends ItemView {
   private _centerEl: SVGElement | null = null;
   private _linksEl: SVGElement | null = null;
   private _ksTitleEl: SVGElement | null = null; // the keystone's name, fixed above the ring
+  private _scanTitleEl: SVGElement | null = null; // the note under the roam cursor, shown in the ring's centre
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
 
@@ -200,6 +201,12 @@ export class RhizoneFacetView extends ItemView {
       this._noteEls.set(n.path, g as SVGGElement);
     }
 
+    // centre readout: the note you're scanning past on the ring (ambient roam)
+    this._scanTitleEl = pan.createSvg("text", {
+      cls: ["rg-gx-scan"],
+      attr: { x: String(C), y: String(C), "text-anchor": "middle" }
+    });
+
     const legend = root.createDiv({ cls: "rg-tree-legend" });
     legend.createSpan({ text: "click a note to summon · ←/→ or scroll to roam the ring · enter summons · ctrl-scroll zoom · drag pan" });
 
@@ -238,6 +245,17 @@ export class RhizoneFacetView extends ItemView {
     const note = ordered[this.cursor];
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     this._noteEls.get(note.path)?.classList.add("rg-cursor");
+    this.updateScanTitle();
+  }
+
+  /** Mirror the note under the roam cursor into the ring's centre (ambient only). */
+  private updateScanTitle(): void {
+    const el = this._scanTitleEl;
+    if (!el) return;
+    const ordered = this.keystone ? [] : this.orderedNotes();
+    const note = this.cursor >= 0 ? ordered[this.cursor] : undefined;
+    el.setText(note ? trunc(displayLabel(baseOf(note.path)), 32) : "");
+    el.classList.toggle("is-on", !!note);
   }
   private summonCursor(): void {
     if (this.keystone) return void this.release();
@@ -265,6 +283,7 @@ export class RhizoneFacetView extends ItemView {
     this._ksTitleEl?.setText(ksName);
     this._releaseEl?.toggleClass("is-hidden", !ks);
     this.contentEl.toggleClass("rg-rz-focused", !!ks);
+    this.updateScanTitle();
 
     if (!ks) {
       // ambient — everyone on the outer ring, undimmed, labels on hover only

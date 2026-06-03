@@ -490,12 +490,15 @@ export class RhizoneFacetView extends ItemView {
       pos.set(gw.name, p);
       this._treeFacets.set(gw.facet.key, p); // so inner-ring notes can tie to their facet node
     }
+    const pathsAt = new Map<string, SVGElement[]>(); // Sephira name → the paths touching it
     for (const p of tree.paths) {
       const a = pos.get(p.from);
       const b = pos.get(p.to);
       if (!a || !b) continue;
       const line = grp.createSvg("line", { cls: ["rg-lt-path"], attr: { x1: a.x, y1: a.y, x2: b.x, y2: b.y } });
       line.style.setProperty("--rg-path-strength", String(0.12 + p.affinity * 0.6));
+      (pathsAt.get(p.from) ?? pathsAt.set(p.from, []).get(p.from)!).push(line);
+      (pathsAt.get(p.to) ?? pathsAt.set(p.to, []).get(p.to)!).push(line);
     }
     for (const gw of tree.gateways) {
       if (!gw.facet) continue;
@@ -513,6 +516,9 @@ export class RhizoneFacetView extends ItemView {
         trunc(displayLabel(gw.facet.label), 18)
       );
       const key = gw.facet.key;
+      const touching = pathsAt.get(gw.name) ?? [];
+      node.addEventListener("mouseover", () => touching.forEach((ln) => ln.classList.add("rg-lt-hot")));
+      node.addEventListener("mouseout", () => touching.forEach((ln) => ln.classList.remove("rg-lt-hot")));
       node.addEventListener("click", (e) => {
         e.stopPropagation();
         this.setKeystone({ kind: "facet", key });

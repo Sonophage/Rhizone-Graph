@@ -966,8 +966,10 @@ body.rg-phosphor-green :is(.reticular-graph, .rhizone-facet) {
 }
 .rg-gx-note:hover .rg-gx-label,
 .rg-gx-note.rg-related .rg-gx-label,
-.rg-gx-note.rg-linked .rg-gx-label,
-.rg-gx-note.rg-cursor .rg-gx-label { opacity: 1; }
+.rg-gx-note.rg-linked .rg-gx-label { opacity: 1; }
+/* the scanned node's name is carried by the big centre readout — don't also print it on the
+   ring (the glowing cursor dot already marks which one it is). No double "Opaline". */
+.rg-gx-note.rg-cursor .rg-gx-label { opacity: 0; }
 .rg-show-labels .rg-gx-label { opacity: 1; }
 /* focused: the dimmed (unconnected) outer notes drop their labels entirely — only the
    keystone, its inner ring, and the notes wired to it stay named */

@@ -1,4 +1,5 @@
 import { ItemView, Menu, Notice, debounce, type WorkspaceLeaf, type App } from "obsidian";
+import { NotePickerModal } from "./notePicker.ts";
 import { buildTreeFromGraph, type Tree } from "../engine/tree.ts";
 import { subgraph, type FacetGraph } from "../engine/facetGraph.ts";
 
@@ -44,6 +45,11 @@ export interface RhizoneHost {
   removeConnection(focusPath: string, candidatePath: string): Promise<void>;
   /** Create the unwritten note behind a phantom facet (empty), open it, return its path. */
   createGhostNote(key: string): Promise<string | null>;
+  /** Trace the rare-facet chain between two notes — the path through the space between them. */
+  findPath(
+    from: string,
+    to: string
+  ): { notes: { path: string; basename: string }[]; hops: { via: { key: string; label: string }; df: number }[] } | null;
   /** Open a note in the editor (optionally a new tab). */
   openNote(path: string, newLeaf?: boolean): void;
   /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
@@ -92,6 +98,7 @@ export class RhizoneFacetView extends ItemView {
   private _panelEl: HTMLElement | null = null; // connections panel (the kin list, on focus)
   private _dailyEl: HTMLElement | null = null; // "today's door" reading (ambient centre)
   private _drawOffset = 0; // "another" cycles the daily pool
+  private _path: { notes: NoteRef[]; hops: { via: { key: string; label: string }; df: number }[] } | null = null;
   private _searchSeq = 0; // guards against out-of-order async search results
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
@@ -140,6 +147,7 @@ export class RhizoneFacetView extends ItemView {
     this._ghostEls.clear();
     this._centerEl = null;
     this._linksEl = null;
+    this._path = null;
     this._pos.clear();
     this._graph = null; // the index may have changed; rebuild the graph lazily
 
@@ -493,6 +501,18 @@ export class RhizoneFacetView extends ItemView {
       if (this.keystone?.kind === "note" && this._inner.has(t.key)) {
         menu.addItem((i) => i.setTitle("Forge connection").setIcon("link").onClick(() => this.runAction("forge", t)));
       }
+      // pathfinding — the chain through the space between notes
+      if (this.keystone?.kind === "note" && this.keystone.key !== t.key) {
+        const ks = this.keystone.key;
+        menu.addItem((i) =>
+          i.setTitle(`Path from ${trunc(displayLabel(baseOf(ks)), 18)} → here`).setIcon("route").onClick(() => void this.tracePath(ks, t.key))
+        );
+      }
+      menu.addItem((i) =>
+        i.setTitle("Trace a path from here…").setIcon("route").onClick(() => {
+          new NotePickerModal(this.host.app, (f) => void this.tracePath(t.key, f.path)).open();
+        })
+      );
       menu.addItem((i) => i.setTitle("Reveal in Reticular").setIcon("git-fork").onClick(() => this.runAction("reveal", t)));
     } else {
       menu.addItem((i) => i.setTitle("Enter the unwritten door").setIcon("door-open").onClick(() => this.runAction("summon", t)));
@@ -582,7 +602,7 @@ export class RhizoneFacetView extends ItemView {
     const el = this._dailyEl;
     if (!el) return;
     el.empty();
-    const door = this.cursor >= 0 || this.keystone ? null : this.dailyDoor();
+    const door = this.cursor >= 0 || this.keystone || this._path ? null : this.dailyDoor();
     if (!door) {
       el.setAttr("aria-hidden", "true");
       return;
@@ -623,11 +643,69 @@ export class RhizoneFacetView extends ItemView {
     }
   }
 
+  // ── pathfinding: the chain through the space between two notes ──
+  private async tracePath(from: string, to: string): Promise<void> {
+    const p = this.host.findPath(from, to);
+    if (!p) return void new Notice("no rare path between them — only thoroughfares");
+    this._path = p;
+    this.layout(); // places every note, then re-draws the overlay (layout owns it while _path is set)
+    new Notice(`path · ${displayLabel(baseOf(from))} → ${displayLabel(baseOf(to))} · ${p.hops.length} stairs`);
+  }
+
+  /** Spotlight the path notes, draw the bright labelled stairs between them, fill the route panel. */
+  private drawPathOverlay(): void {
+    if (!this._path || !this._linksEl) return;
+    this.contentEl.addClass("rg-spotlight");
+    for (const n of this._path.notes) this._noteEls.get(n.path)?.classList.add("rg-on");
+    for (let i = 0; i < this._path.hops.length; i++) {
+      const a = this._pos.get(this._path.notes[i].path);
+      const b = this._pos.get(this._path.notes[i + 1].path);
+      if (!a || !b) continue;
+      this._linksEl.createSvg("line", { cls: ["rg-path-stair"], attr: { x1: a.x, y1: a.y, x2: b.x, y2: b.y, pathLength: "1" } });
+      this._linksEl
+        .createSvg("text", { cls: ["rg-path-vialabel"], attr: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 4, "text-anchor": "middle" } })
+        .setText(trunc(displayLabel(this._path.hops[i].via.label), 18));
+    }
+    this.renderRoute();
+  }
+
+  /** The route panel — the chain as a readable ladder of stairs (with the via + rarity numbers). */
+  private renderRoute(): void {
+    const p = this._panelEl;
+    if (!p || !this._path) return;
+    p.empty();
+    p.setAttr("aria-hidden", "false");
+    const head = p.createDiv({ cls: "rg-cx-head", text: "the path" });
+    const clear = head.createEl("button", { cls: "rg-cx-btn", text: "✕" });
+    clear.addEventListener("click", () => this.clearPath());
+    const list = p.createDiv({ cls: "rg-cx-list" });
+    this._path.notes.forEach((n, i) => {
+      const row = list.createDiv({ cls: "rg-cx-row", attr: { tabindex: "0", role: "button" } });
+      row.createSpan({ cls: "rg-cx-name", text: trunc(displayLabel(n.basename), 28) });
+      if (i < this._path!.hops.length) {
+        const h = this._path!.hops[i];
+        row.createSpan({ cls: "rg-cx-via", text: `↓ via ${trunc(displayLabel(h.via.label), 20)} · df ${h.df}` });
+      }
+      const acts = row.createSpan({ cls: "rg-cx-acts" });
+      const open = acts.createEl("button", { cls: "rg-cx-btn", text: "open" });
+      open.addEventListener("click", (e) => (e.stopPropagation(), this.host.openNote(n.path)));
+      row.addEventListener("click", () => this.runAction("summon", { kind: "note", key: n.path }));
+    });
+  }
+
+  private clearPath(): void {
+    this._path = null;
+    this.contentEl.removeClass("rg-spotlight");
+    this._noteEls.forEach((g) => g.classList.remove("rg-on"));
+    this.layout();
+  }
+
   private setKeystone(k: { kind: "note" | "facet"; key: string }): void {
     const same = !!this.keystone && this.keystone.kind === k.kind && this.keystone.key === k.key;
     this.keystone = same ? null : k;
     this.cursor = -1;
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
+    this._path = null; // a new keystone ends any traced path
     this.highlightConnections(null); // reset any hover spotlight before the new state
     if (this.keystone) {
       this.panToCenter();
@@ -638,8 +716,9 @@ export class RhizoneFacetView extends ItemView {
     this.layout();
   }
   private release(): void {
-    if (!this.keystone) return;
+    if (!this.keystone && !this._path) return;
     this.keystone = null;
+    this._path = null;
     this.highlightConnections(null); // drop the spotlight
     this.layout();
   }
@@ -754,6 +833,7 @@ export class RhizoneFacetView extends ItemView {
       this.drawLinks();
       this.hidePanel();
       this.renderDaily(); // the reading fills the empty centre
+      if (this._path) this.drawPathOverlay();
       return;
     }
 
@@ -805,6 +885,7 @@ export class RhizoneFacetView extends ItemView {
     this.drawLinks();
     this.renderPanel(ks, innerNotes, ghostKin);
     this.hideDaily();
+    if (this._path) this.drawPathOverlay();
   }
 
   private place(

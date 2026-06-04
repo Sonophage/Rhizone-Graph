@@ -1145,6 +1145,15 @@
 .rg-gx-note.rg-dim:hover { opacity: 0.7; }
 /* spotlight: with the tree in view, hovering a node dims everything but it + its connections */
 .rg-spotlight .rg-gx-note:not(.rg-on) { opacity: 0.07; }
+/* pathfinding — the bright chain of stairs from A to B, with the shared facet on each riser */
+.rg-path-stair { stroke: var(--rg-accent); stroke-width: 2.4; opacity: 0.95; }
+.rg-anim .rg-path-stair { stroke-dasharray: 1; stroke-dashoffset: 1; animation: rg-draw 520ms ease forwards; }
+.rg-path-vialabel {
+  fill: var(--rg-accent);
+  font-family: var(--font-monospace, monospace);
+  font-size: 12px;
+  font-style: italic;
+}
 .rg-gx-note.rg-cursor .rg-gx-dot {
   fill: var(--rg-accent);
   transform: scale(2);

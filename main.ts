@@ -5,6 +5,7 @@ import type { LocalWeb, NodeState } from "./src/engine/types.ts";
 import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
 import { forge, unforge } from "./src/obsidian/connections.ts";
 import { buildTree as computeTree, type Tree } from "./src/engine/tree.ts";
+import { findPath as computePath } from "./src/engine/pathfind.ts";
 import { buildFacetGraph, detectCommunities, isContentTitle, type FacetGraph } from "./src/engine/facetGraph.ts";
 import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
 import { RhizoneFacetView, RHIZONE_FACET_VIEW_TYPE, type RhizoneHost } from "./src/view/rhizoneView.ts";
@@ -200,6 +201,23 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
   allNotes(): { path: string; basename: string }[] {
     this.ensureIndex();
     return [...this.index.all()].filter((r) => !this.isHidden(r.path)).map((r) => ({ path: r.path, basename: r.basename }));
+  }
+
+  /** Trace the rare-facet chain between two notes (the path through the space between them). */
+  findPath(
+    from: string,
+    to: string
+  ): { notes: { path: string; basename: string }[]; hops: { via: { key: string; label: string }; df: number }[] } | null {
+    this.ensureIndex();
+    const p = computePath(this.index, from, to, { skip: (n) => this.isHidden(n) });
+    if (!p) return null;
+    return {
+      notes: p.notes.map((path) => ({ path, basename: this.index.get(path)?.basename ?? path })),
+      hops: p.hops.map((h, i) => {
+        const rec = this.index.get(p.notes[i]) ?? this.index.get(p.notes[i + 1]);
+        return { via: { key: h.via, label: rec?.facetLabels[h.via] ?? h.via }, df: h.df };
+      })
+    };
   }
 
   /** A note's facet keys (to seed the rhizome from a note keystone). */

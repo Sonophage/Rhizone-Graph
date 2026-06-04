@@ -337,12 +337,14 @@ export class RhizoneFacetView extends ItemView {
     oppGhost.forEach((gh, i) => oppGhostPos.set(gh.key, ringXY(i, oppGhost.length, R_GHOST)));
     let ghostMax = 1;
     for (const gh of this._ghosts) ghostMax = Math.max(ghostMax, sg.nodes.get(gh.key)?.df ?? 0);
+    let gi = 0;
     for (const gh of this._ghosts) {
       const p0 = oppGhostPos.get(gh.key) ?? { x: C, y: C };
       const g = pan.createSvg("g", {
         cls: ["rg-gx-note", "rg-gx-ghost"],
         attr: { "data-ghost": gh.key, transform: `translate(${p0.x} ${p0.y})` }
       });
+      g.style.setProperty("--rg-tw", `${(gi++ % 8) * 0.6}s`); // staggered idle twinkle
       g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: String(this.sizeFor(sg.nodes.get(gh.key)?.df ?? 0, ghostMax) * 2) } }); // ghosts carry double weight
       g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
         trunc(displayLabel(gh.label), 28)
@@ -377,6 +379,7 @@ export class RhizoneFacetView extends ItemView {
     requestAnimationFrame(() => {
       this.layout();
       this._noteEls.forEach((g) => g.classList.remove("rg-enter"));
+      if (this.host.animations()) this.ignite(); // the vault wakes
     });
   }
 
@@ -920,6 +923,13 @@ export class RhizoneFacetView extends ItemView {
     c.addEventListener("animationend", () => c.remove());
   }
 
+  /** Ignition: a slow bloom from the centre as the galaxy wakes on open. */
+  private ignite(): void {
+    if (!this._pan) return;
+    const c = this._pan.createSvg("circle", { cls: ["rg-ignite"], attr: { cx: C, cy: C, r: 30 } });
+    c.addEventListener("animationend", () => c.remove());
+  }
+
   /** Centre the galaxy in the viewBox (after summoning, the keystone sits dead-centre). */
   private panToCenter(): void {
     this.vt.tx = C * (1 - this.vt.z);
@@ -1116,6 +1126,7 @@ export class RhizoneFacetView extends ItemView {
 
     const grp = this._pan.createSvg("g", { cls: ["rg-gx-center"] });
     this._centerEl = grp;
+    grp.createSvg("circle", { cls: ["rg-gx-well"], attr: { cx: C, cy: C, r: 70 } }); // gravity-well glow behind the tree
     const BOX = 380;
     const tx = (x: number): number => C + (x - 0.5) * BOX;
     const ty = (y: number): number => C + (y - 0.5) * BOX;

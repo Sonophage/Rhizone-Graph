@@ -597,25 +597,31 @@ class RhizoneSettingTab extends PluginSettingTab {
     new Setting(this.containerEl).setName("Rhizone").setHeading();
     new Setting(this.containerEl)
       .setName("Hide folders from the graphs")
-      .setDesc("Toggle folders to keep out of BOTH Reticular and Rhizone (templates, daily notes, attachments…). Hidden notes also won't auto-focus Reticular.");
+      .setDesc("Keep folders (templates, daily notes, attachments…) out of BOTH Reticular and Rhizone. Hidden notes also won't auto-focus Reticular.");
 
     const folders = this.app.vault
       .getAllLoadedFiles()
       .filter((f): f is TFolder => f instanceof TFolder && !!f.path && f.path !== "/")
       .sort((a, b) => a.path.localeCompare(b.path));
-    const hidden = new Set(this.plugin.hidePaths());
     if (!folders.length) {
       this.containerEl.createDiv({ cls: "setting-item-description", text: "No folders in this vault." });
       return;
     }
+
+    const hidden = new Set(this.plugin.hidePaths());
+    // tucked in a collapsible so the folder list doesn't take the whole page
+    const details = this.containerEl.createEl("details", { cls: "rg-settings-folders" });
+    const summary = details.createEl("summary");
+    const label = (): string => `Choose folders — ${hidden.size} hidden`;
+    summary.setText(label());
     for (const folder of folders) {
-      new Setting(this.containerEl).setName(folder.path).addToggle((t) => {
+      new Setting(details).setName(folder.path).addToggle((t) => {
         t.setValue(hidden.has(folder.path));
         t.onChange((on) => {
-          const cur = new Set(this.plugin.hidePaths());
-          if (on) cur.add(folder.path);
-          else cur.delete(folder.path);
-          this.plugin.setHidePaths([...cur]);
+          if (on) hidden.add(folder.path);
+          else hidden.delete(folder.path);
+          this.plugin.setHidePaths([...hidden]);
+          summary.setText(label()); // keep the count live without collapsing the list
         });
       });
     }

@@ -1176,6 +1176,10 @@
   pointer-events: none;
 }
 
+/* settings: the folder picker tucked in a collapsible */
+.rg-settings-folders > summary { cursor: pointer; padding: 8px 0; color: var(--text-accent); }
+.rg-settings-folders[open] > summary { margin-bottom: 4px; }
+
 .rg-gx-note { cursor: pointer; }
 /* ghost ring: phantom facets (referenced, never written) — normal dots, just faded */
 .rg-gx-ghost { opacity: 0.4; }

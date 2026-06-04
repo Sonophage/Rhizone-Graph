@@ -19,7 +19,7 @@ interface RGSettings {
   animations: boolean;
   /** node fan-spread within a sector, 0 (tight) .. 100 (wide); 50 = default */
   spread: number;
-  /** path fragments hidden from RHIZONE (e.g. "Templates", "Daily") — matched case-insensitively */
+  /** path fragments hidden from BOTH graphs (e.g. "Templates", "Daily") — matched case-insensitively */
   hidePaths: string[];
 }
 const DEFAULT_SETTINGS: RGSettings = {
@@ -147,7 +147,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         const file = leaf?.view instanceof MarkdownView ? leaf.view.file : null;
-        if (file && file.extension === "md") {
+        if (file && file.extension === "md" && !this.isHidden(file.path)) {
           for (const v of this.getScopeViews()) v.followActive(file.path);
         }
       })
@@ -157,7 +157,13 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
   // ── ScopeHost ────────────────────────────────────────────────────────────
   getLocalWeb(focusPath: string): LocalWeb {
     this.ensureIndex();
-    return buildLocalWeb(focusPath, this.index);
+    const web = buildLocalWeb(focusPath, this.index);
+    if (!this._settings.hidePaths.length) return web;
+    return {
+      ...web,
+      inner: web.inner.filter((c) => !this.isHidden(c.path)),
+      outer: web.outer.filter((c) => !this.isHidden(c.path))
+    };
   }
 
   // ── RhizoneHost ──────────────────────────────────────────────────────────
@@ -173,7 +179,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return buildFacetGraph(this.index);
   }
 
-  /** Is this note hidden from Rhizone (matches a configured path fragment)? Reticular ignores this. */
+  /** Is this note hidden from BOTH graphs (matches a configured path fragment)? */
   isHidden(path: string): boolean {
     if (!this._settings.hidePaths.length) return false;
     const p = path.toLowerCase();
@@ -338,7 +344,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
 
   neighborEdges(paths: string[]): Array<[string, string]> {
     this.ensureIndex();
-    return neighborEdges(paths, this.index);
+    return neighborEdges(paths, this.index).filter(([a, b]) => !this.isHidden(a) && !this.isHidden(b));
   }
 
   fileForPath(path: string): TFile | null {
@@ -532,10 +538,10 @@ class RhizoneSettingTab extends PluginSettingTab {
     this.containerEl.empty();
     new Setting(this.containerEl).setName("Rhizone").setHeading();
     new Setting(this.containerEl)
-      .setName("Hide from Rhizone")
+      .setName("Hide from the graphs")
       .setDesc(
-        "Path fragments to keep out of the Rhizone city view — one per line (e.g. Templates, Daily). " +
-          "Case-insensitive substring match on the note path. Reticular is unaffected."
+        "Path fragments to keep out of BOTH Reticular and Rhizone — one per line (e.g. Templates, Daily). " +
+          "Case-insensitive substring match on the note path. Hidden notes also won't auto-focus Reticular."
       )
       .addTextArea((ta) => {
         ta.setPlaceholder("Templates\nDaily\n_attachments");

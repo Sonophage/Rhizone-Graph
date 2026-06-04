@@ -564,33 +564,42 @@ export class RhizoneFacetView extends ItemView {
   }
 
   // ── today's door: a date-seeded ripe coincidence to forge ──
-  /** Ripe coincidences: pairs joined ONLY by a rare (df=2) facet and not yet connected. */
+  /**
+   * Ripe coincidences: pairs joined by a rare (df=2) facet, not yet connected, AND otherwise
+   * STRANGERS — they share almost nothing else. Two notes sharing one weird thread (and ideally
+   * sitting in different communities) is a real coincidence; two that share a whole cluster of
+   * attributes (e.g. two films by the same director) are obviously related and dropped. Sorted
+   * most-surprising first.
+   */
   private ripePool(): { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] {
     const g = this.graph();
     const linked = new Set<string>();
     const pk = (x: string, y: string): string => (x < y ? x + "|" + y : y + "|" + x);
     for (const [x, y] of this._links) linked.add(pk(x, y));
-    const out: { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] = [];
+    const scored: { a: NoteRef; b: NoteRef; via: { key: string; label: string }; shared: number; cross: boolean }[] = [];
     for (const node of g.nodes.values()) {
       if (node.df !== 2) continue; // exactly two notes → an unambiguous coincidence
       const notes = this.host.notesForFacet(node.key);
       if (notes.length !== 2) continue;
       if (linked.has(pk(notes[0].path, notes[1].path))) continue; // already a resident path
-      out.push({ a: notes[0], b: notes[1], via: { key: node.key, label: node.label } });
+      // how little else do they share? joined by ONE rare thread = true strangers
+      const fa = new Set(this.host.noteFacets(notes[0].path));
+      let shared = 0;
+      for (const k of this.host.noteFacets(notes[1].path)) if (fa.has(k)) shared++;
+      if (shared > 2) continue; // a whole shared cluster → obviously related, not a coincidence
+      const ca = this.clusters[notes[0].path];
+      const cb = this.clusters[notes[1].path];
+      scored.push({ a: notes[0], b: notes[1], via: { key: node.key, label: node.label }, shared, cross: !!ca && !!cb && ca !== cb });
     }
-    return out.sort(
-      (x, y) => x.via.label.localeCompare(y.via.label) || x.a.basename.localeCompare(y.a.basename)
-    );
+    scored.sort((x, y) => x.shared - y.shared || (y.cross ? 1 : 0) - (x.cross ? 1 : 0) || x.via.label.localeCompare(y.via.label));
+    return scored.map(({ a, b, via }) => ({ a, b, via }));
   }
 
-  /** Pick today's door — stable per day (a ritual), cycled by "another". */
+  /** The strangest unforged coincidence first; "another" walks down the surprise-ranked pool. */
   private dailyDoor(): { a: NoteRef; b: NoteRef; via: { key: string; label: string } } | null {
     const pool = this.ripePool();
     if (!pool.length) return null;
-    const seed = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    let h = 0;
-    for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-    return pool[(h + this._drawOffset) % pool.length];
+    return pool[this._drawOffset % pool.length];
   }
 
   private hideDaily(): void {
@@ -608,7 +617,7 @@ export class RhizoneFacetView extends ItemView {
       return;
     }
     el.setAttr("aria-hidden", "false");
-    el.createDiv({ cls: "rg-daily-tag", text: "today's door" });
+    el.createDiv({ cls: "rg-daily-tag", text: "an unlikely door" });
     const pair = el.createDiv({ cls: "rg-daily-pair" });
     pair.createSpan({ cls: "rg-daily-note", text: trunc(displayLabel(door.a.basename), 24) });
     pair.createSpan({ cls: "rg-daily-join", text: "⟷" });

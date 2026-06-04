@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin, TFile, debounce, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Plugin, PluginSettingTab, Setting, TFile, debounce, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 import { FacetIndex } from "./src/engine/index.ts";
 import { buildLocalWeb, neighborEdges, phantomFacets, type PhantomFacet } from "./src/engine/cocitation.ts";
 import type { LocalWeb, NodeState } from "./src/engine/types.ts";
@@ -18,12 +18,15 @@ interface RGSettings {
   animations: boolean;
   /** node fan-spread within a sector, 0 (tight) .. 100 (wide); 50 = default */
   spread: number;
+  /** path fragments hidden from RHIZONE (e.g. "Templates", "Daily") — matched case-insensitively */
+  hidePaths: string[];
 }
 const DEFAULT_SETTINGS: RGSettings = {
   labelZoom: { connected: 0, mentioned: 10, candidate: 50 },
   graphLabels: true,
   animations: true,
-  spread: 50
+  spread: 50,
+  hidePaths: []
 };
 
 export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, RhizoneHost {
@@ -55,8 +58,10 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       labelZoom: { ...DEFAULT_SETTINGS.labelZoom, ...(saved?.labelZoom ?? {}) },
       graphLabels: saved?.graphLabels ?? DEFAULT_SETTINGS.graphLabels,
       animations: saved?.animations ?? DEFAULT_SETTINGS.animations,
-      spread: saved?.spread ?? DEFAULT_SETTINGS.spread
+      spread: saved?.spread ?? DEFAULT_SETTINGS.spread,
+      hidePaths: saved?.hidePaths ?? DEFAULT_SETTINGS.hidePaths
     };
+    this.addSettingTab(new RhizoneSettingTab(this.app, this));
 
     this.registerView(RETICULAR_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ReticularView(leaf, this));
     this.registerView(RHIZONE_FACET_VIEW_TYPE, (leaf: WorkspaceLeaf) => new RhizoneFacetView(leaf, this));
@@ -167,18 +172,34 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return buildFacetGraph(this.index);
   }
 
+  /** Is this note hidden from Rhizone (matches a configured path fragment)? Reticular ignores this. */
+  isHidden(path: string): boolean {
+    if (!this._settings.hidePaths.length) return false;
+    const p = path.toLowerCase();
+    return this._settings.hidePaths.some((h) => h && p.includes(h.toLowerCase()));
+  }
+  hidePaths(): string[] {
+    return this._settings.hidePaths;
+  }
+  setHidePaths(list: string[]): void {
+    this._settings.hidePaths = list;
+    void this.saveData(this._settings);
+    this.refreshView();
+  }
+
   /** Notes citing a facet — the doors that bloom from it. */
   notesForFacet(key: string): { path: string; basename: string }[] {
     this.ensureIndex();
     return [...this.index.notesWithFacet(key)]
+      .filter((p) => !this.isHidden(p))
       .map((p) => ({ path: p, basename: this.index.get(p)?.basename ?? p }))
       .sort((a, b) => a.basename.localeCompare(b.basename));
   }
 
-  /** Every note in the vault (the ever-present galaxy ring). */
+  /** Every note in the vault (the ever-present galaxy ring) — minus the Rhizone-hidden ones. */
   allNotes(): { path: string; basename: string }[] {
     this.ensureIndex();
-    return [...this.index.all()].map((r) => ({ path: r.path, basename: r.basename }));
+    return [...this.index.all()].filter((r) => !this.isHidden(r.path)).map((r) => ({ path: r.path, basename: r.basename }));
   }
 
   /** A note's facet keys (to seed the rhizome from a note keystone). */
@@ -198,7 +219,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
       if (isContentTitle(key)) continue;
       const df = this.index.df(key);
       for (const p of this.index.notesWithFacet(key)) {
-        if (p === exclude) continue;
+        if (p === exclude || this.isHidden(p)) continue;
         const cur = rarest.get(p);
         if (cur === undefined || df < cur.df) rarest.set(p, { df, key });
       }
@@ -236,6 +257,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     const content = await this.ensureContentCache();
     const scored: { path: string; basename: string; score: number }[] = [];
     for (const r of this.index.all()) {
+      if (this.isHidden(r.path)) continue;
       const name = r.basename.toLowerCase();
       let score = 0;
       if (name === q) score += 100;
@@ -273,7 +295,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return neighborEdges(
       [...this.index.all()].map((r) => r.path),
       this.index
-    );
+    ).filter(([a, b]) => !this.isHidden(a) && !this.isHidden(b));
   }
 
   /** Each note's cluster = the facet-community most represented among its facets. */
@@ -477,4 +499,37 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     if (f instanceof TFile) void this.app.workspace.getLeaf(newLeaf ? "tab" : false).openFile(f);
   }
 
+}
+
+/** Settings — currently the Rhizone hide-filter (folders/types kept out of the city view). */
+class RhizoneSettingTab extends PluginSettingTab {
+  constructor(
+    app: import("obsidian").App,
+    private plugin: RhizoneGraphPlugin
+  ) {
+    super(app, plugin);
+  }
+
+  display(): void {
+    this.containerEl.empty();
+    new Setting(this.containerEl).setName("Rhizone").setHeading();
+    new Setting(this.containerEl)
+      .setName("Hide from Rhizone")
+      .setDesc(
+        "Path fragments to keep out of the Rhizone city view — one per line (e.g. Templates, Daily). " +
+          "Case-insensitive substring match on the note path. Reticular is unaffected."
+      )
+      .addTextArea((ta) => {
+        ta.setPlaceholder("Templates\nDaily\n_attachments");
+        ta.setValue(this.plugin.hidePaths().join("\n"));
+        ta.inputEl.rows = 6;
+        ta.onChange((v) => {
+          const list = v
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          this.plugin.setHidePaths(list);
+        });
+      });
+  }
 }

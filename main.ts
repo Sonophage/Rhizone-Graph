@@ -6,7 +6,7 @@ import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
 import { forge, unforge } from "./src/obsidian/connections.ts";
 import { buildTree as computeTree, type Tree } from "./src/engine/tree.ts";
 import { findPath as computePath } from "./src/engine/pathfind.ts";
-import { buildFacetGraph, detectCommunities, isContentTitle, type FacetGraph } from "./src/engine/facetGraph.ts";
+import { buildFacetGraph, detectCommunities, bridgeScores, isContentTitle, type FacetGraph } from "./src/engine/facetGraph.ts";
 import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
 import { RhizoneFacetView, RHIZONE_FACET_VIEW_TYPE, type RhizoneHost } from "./src/view/rhizoneView.ts";
 
@@ -224,6 +224,44 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
         return { via: { key: h.via, label: rec?.facetLabels[h.via] ?? h.via }, df: h.df };
       })
     };
+  }
+
+  /** Hops between two notes when their shared facet is removed — the distance without the thread. */
+  detour(a: string, b: string, avoidKey: string): number {
+    this.ensureIndex();
+    const p = computePath(this.index, a, b, { avoid: new Set([avoidKey]), skip: (n) => this.isHidden(n) });
+    return p ? p.hops.length : 99; // unreachable without it → maximally surprising
+  }
+
+  /**
+   * Bridge facets: rare facets whose strong neighbours span TWO communities — the stairs between
+   * buildings (e.g. [[Philip K. Dick]] linking the Gnosticism and Sci-Fi clusters). Ranked by
+   * bridge score; biased toward facets the active note cites.
+   */
+  bridges(limit = 8, activePath?: string): { key: string; label: string; df: number; a: string; b: string }[] {
+    this.ensureIndex();
+    const g = buildFacetGraph(this.index);
+    const labels = detectCommunities(g);
+    const scores = bridgeScores(g, labels);
+    const active = activePath ? new Set(this.index.get(activePath)?.facetKeys ?? []) : null;
+    const out: { key: string; label: string; df: number; a: string; b: string; score: number; on: boolean }[] = [];
+    for (const [key, score] of scores) {
+      if (score <= 0) continue;
+      const node = g.nodes.get(key);
+      if (!node) continue;
+      const tally = new Map<string, number>();
+      for (const nb of g.adjacency.get(key) ?? []) {
+        if (nb.affinity < 0.15) continue;
+        const l = labels.get(nb.key);
+        if (l) tally.set(l, (tally.get(l) ?? 0) + 1);
+      }
+      const top2 = [...tally.entries()].sort((x, y) => y[1] - x[1]).slice(0, 2);
+      if (top2.length < 2) continue;
+      const name = (rep: string): string => g.nodes.get(rep)?.label ?? rep;
+      out.push({ key, label: node.label, df: node.df, a: name(top2[0][0]), b: name(top2[1][0]), score, on: !!active?.has(key) });
+    }
+    out.sort((x, y) => Number(y.on) - Number(x.on) || y.score - x.score || x.df - y.df);
+    return out.slice(0, limit).map(({ score, on, ...o }) => o);
   }
 
   /** A note's facet keys (to seed the rhizome from a note keystone). */

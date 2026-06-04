@@ -1096,6 +1096,21 @@
 .rg-daily-join { color: var(--rg-accent); font-size: 17px; }
 .rg-daily-via { font-size: 12px; font-style: italic; color: var(--text-muted); }
 .rg-daily-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+/* ways-in: a short list of stairs (bridge facets) + far coincidences, explore-first */
+.rg-daily { align-items: stretch; min-width: 320px; }
+.rg-wi-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 2px;
+  border-top: 1px solid var(--background-modifier-border-hover, rgba(255, 255, 255, 0.06));
+}
+.rg-wi-main { display: flex; flex-direction: column; gap: 1px; text-align: left; min-width: 0; }
+.rg-wi-label { font-family: var(--font-monospace, monospace); font-size: 13px; color: var(--text-normal); }
+.rg-wi-sub { font-size: 10px; color: var(--text-muted); }
+.rg-wi-acts { display: flex; gap: 6px; flex: 0 0 auto; }
+.rg-wi-foot { display: flex; justify-content: center; margin-top: 8px; }
 .rg-daily-btn {
   font-family: var(--font-monospace, monospace);
   font-size: 11px;

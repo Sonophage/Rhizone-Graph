@@ -36,10 +36,11 @@ export function findPath(
   idx: FacetIndex,
   from: string,
   to: string,
-  opts: { maxHops?: number; skip?: (path: string) => boolean } = {}
+  opts: { maxHops?: number; skip?: (path: string) => boolean; avoid?: Set<string> } = {}
 ): NotePath | null {
   const maxHops = opts.maxHops ?? 8;
   const skip = opts.skip ?? (() => false);
+  const avoid = opts.avoid;
   if (from === to) return { notes: [from], hops: [] };
 
   const dist = new Map<string, number>([[from, 0]]);
@@ -66,7 +67,7 @@ export function findPath(
     if (!rec) continue;
 
     for (const key of new Set(rec.facetKeys)) {
-      if (isContentTitle(key)) continue;
+      if (isContentTitle(key) || avoid?.has(key)) continue;
       const df = idx.df(key);
       if (df < 2 || df > DF_THOROUGHFARE) continue; // need ≥2 to join two notes; skip thoroughfares
       const edge = df + HOP_PENALTY;

@@ -45,6 +45,10 @@ export interface RhizoneHost {
   removeConnection(focusPath: string, candidatePath: string): Promise<void>;
   /** Create the unwritten note behind a phantom facet (empty), open it, return its path. */
   createGhostNote(key: string): Promise<string | null>;
+  /** Hops between two notes with their shared facet removed (the surprise of a coincidence). */
+  detour(a: string, b: string, avoidKey: string): number;
+  /** Bridge facets spanning two communities — the stairs between buildings. */
+  bridges(limit?: number, activePath?: string): { key: string; label: string; df: number; a: string; b: string }[];
   /** Trace the rare-facet chain between two notes — the path through the space between them. */
   findPath(
     from: string,
@@ -97,7 +101,8 @@ export class RhizoneFacetView extends ItemView {
   private _resultsEl: HTMLElement | null = null; // search results panel (the three candidate doors)
   private _panelEl: HTMLElement | null = null; // connections panel (the kin list, on focus)
   private _dailyEl: HTMLElement | null = null; // "today's door" reading (ambient centre)
-  private _drawOffset = 0; // "another" cycles the daily pool
+  private _drawOffset = 0; // "shuffle" rotates the ways-in
+  private _ripeCache: { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] | null = null;
   private _path: { notes: NoteRef[]; hops: { via: { key: string; label: string }; df: number }[] } | null = null;
   private _searchSeq = 0; // guards against out-of-order async search results
   private _titleEl: HTMLElement | null = null;
@@ -148,6 +153,7 @@ export class RhizoneFacetView extends ItemView {
     this._centerEl = null;
     this._linksEl = null;
     this._path = null;
+    this._ripeCache = null;
     this._pos.clear();
     this._graph = null; // the index may have changed; rebuild the graph lazily
 
@@ -563,76 +569,81 @@ export class RhizoneFacetView extends ItemView {
     }
   }
 
-  // ── today's door: a date-seeded ripe coincidence to forge ──
+  // ── ways in: the surprising stairs in the vault right now (explore-first) ──
   /**
-   * Ripe coincidences: pairs joined by a rare (df=2) facet, not yet connected, AND otherwise
-   * STRANGERS — they share almost nothing else. Two notes sharing one weird thread (and ideally
-   * sitting in different communities) is a real coincidence; two that share a whole cluster of
-   * attributes (e.g. two films by the same director) are obviously related and dropped. Sorted
-   * most-surprising first.
+   * Far coincidences: pairs joined by a rare (df=2) facet, not yet connected, of DIFFERENT kinds,
+   * ranked by SURPRISE = how far apart they are with the shared thread removed (the detour). Two
+   * notes still 1 hop apart without it are obvious; two that become far/unreachable are a real
+   * stair across the vault. Cached per build (the detour pass is the costly part).
    */
   private ripePool(): { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] {
+    if (this._ripeCache) return this._ripeCache;
     const g = this.graph();
     const linked = new Set<string>();
     const pk = (x: string, y: string): string => (x < y ? x + "|" + y : y + "|" + x);
     for (const [x, y] of this._links) linked.add(pk(x, y));
-    const scored: { a: NoteRef; b: NoteRef; via: { key: string; label: string }; shared: number; cross: boolean }[] = [];
+    const cands: { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] = [];
     for (const node of g.nodes.values()) {
       if (node.df !== 2) continue; // exactly two notes → an unambiguous coincidence
       const notes = this.host.notesForFacet(node.key);
       if (notes.length !== 2) continue;
       if (linked.has(pk(notes[0].path, notes[1].path))) continue; // already a resident path
-      if (kindOf(notes[0]) === kindOf(notes[1])) continue; // siblings in one collection (two albums by an artist, two films by a director) — obvious, not a coincidence
-      // how little else do they share? joined by ONE rare thread = true strangers
-      const fa = new Set(this.host.noteFacets(notes[0].path));
-      let shared = 0;
-      for (const k of this.host.noteFacets(notes[1].path)) if (fa.has(k)) shared++;
-      if (shared > 2) continue; // a whole shared cluster → obviously related, not a coincidence
-      const ca = this.clusters[notes[0].path];
-      const cb = this.clusters[notes[1].path];
-      scored.push({ a: notes[0], b: notes[1], via: { key: node.key, label: node.label }, shared, cross: !!ca && !!cb && ca !== cb });
+      if (kindOf(notes[0]) === kindOf(notes[1])) continue; // siblings in one collection — obvious
+      cands.push({ a: notes[0], b: notes[1], via: { key: node.key, label: node.label } });
+      if (cands.length >= 120) break; // bound the detour pass
     }
-    scored.sort((x, y) => x.shared - y.shared || (y.cross ? 1 : 0) - (x.cross ? 1 : 0) || x.via.label.localeCompare(y.via.label));
-    return scored.map(({ a, b, via }) => ({ a, b, via }));
-  }
-
-  /** The strangest unforged coincidence first; "another" walks down the surprise-ranked pool. */
-  private dailyDoor(): { a: NoteRef; b: NoteRef; via: { key: string; label: string } } | null {
-    const pool = this.ripePool();
-    if (!pool.length) return null;
-    return pool[this._drawOffset % pool.length];
+    this._ripeCache = cands
+      .map((c) => ({ c, d: this.host.detour(c.a.path, c.b.path, c.via.key) }))
+      .sort((x, y) => y.d - x.d || x.c.a.basename.localeCompare(x.c.b.basename))
+      .map((x) => x.c);
+    return this._ripeCache;
   }
 
   private hideDaily(): void {
     this._dailyEl?.setAttr("aria-hidden", "true");
   }
 
-  /** Render the centre "reading" — today's coincidence with act-in-place buttons. */
-  private renderDaily(): void {
+  /** The centre "ways in": bridge facets (the stairs) + far coincidences, explore-first. */
+  private renderWaysIn(): void {
     const el = this._dailyEl;
     if (!el) return;
     el.empty();
-    const door = this.cursor >= 0 || this.keystone || this._path ? null : this.dailyDoor();
-    if (!door) {
-      el.setAttr("aria-hidden", "true");
-      return;
-    }
+    if (this.cursor >= 0 || this.keystone || this._path) return void el.setAttr("aria-hidden", "true");
+    const af = this.host.app.workspace.getActiveFile();
+    const activePath = af && af.extension === "md" ? af.path : undefined;
+    const bridges = this.host.bridges(6, activePath).slice(0, 3);
+    const pool = this.ripePool();
+    const rot = pool.length ? this._drawOffset % pool.length : 0;
+    const pairs = [...pool.slice(rot), ...pool.slice(0, rot)].slice(0, 2);
+    if (!bridges.length && !pairs.length) return void el.setAttr("aria-hidden", "true");
     el.setAttr("aria-hidden", "false");
-    el.createDiv({ cls: "rg-daily-tag", text: "an unlikely door" });
-    const pair = el.createDiv({ cls: "rg-daily-pair" });
-    pair.createSpan({ cls: "rg-daily-note", text: trunc(displayLabel(door.a.basename), 24) });
-    pair.createSpan({ cls: "rg-daily-join", text: "⟷" });
-    pair.createSpan({ cls: "rg-daily-note", text: trunc(displayLabel(door.b.basename), 24) });
-    el.createDiv({ cls: "rg-daily-via", text: `joined only by ${displayLabel(door.via.label)}` });
-    const acts = el.createDiv({ cls: "rg-daily-acts" });
-    const btn = (label: string, primary: boolean, run: () => void): void => {
-      const b = acts.createEl("button", { cls: primary ? "rg-daily-btn rg-daily-primary" : "rg-daily-btn", text: label });
+    el.createDiv({ cls: "rg-daily-tag", text: activePath ? "ways in · from here" : "ways in" });
+
+    const row = (label: string, sub: string): HTMLElement => {
+      const r = el.createDiv({ cls: "rg-wi-row" });
+      const main = r.createDiv({ cls: "rg-wi-main" });
+      main.createSpan({ cls: "rg-wi-label", text: label });
+      main.createSpan({ cls: "rg-wi-sub", text: sub });
+      return r.createDiv({ cls: "rg-wi-acts" }); // returns the actions container
+    };
+    const btn = (host: HTMLElement, label: string, primary: boolean, run: () => void): void => {
+      const b = host.createEl("button", { cls: primary ? "rg-daily-btn rg-daily-primary" : "rg-daily-btn", text: label });
       b.addEventListener("click", (e) => (e.stopPropagation(), run()));
     };
-    btn("build the stair", true, () => void this.forgePair(door.a.path, door.b.path));
-    btn("open " + trunc(displayLabel(door.a.basename), 12), false, () => this.host.openNote(door.a.path));
-    btn("open " + trunc(displayLabel(door.b.basename), 12), false, () => this.host.openNote(door.b.path));
-    btn("another", false, () => (this._drawOffset++, this.renderDaily()));
+    for (const b of bridges) {
+      const acts = row(trunc(displayLabel(b.label), 24), `stair · ${trunc(displayLabel(b.a), 13)} ↔ ${trunc(displayLabel(b.b), 13)}`);
+      btn(acts, "explore", true, () => this.setKeystone({ kind: "facet", key: b.key }));
+    }
+    for (const p of pairs) {
+      const acts = row(
+        `${trunc(displayLabel(p.a.basename), 14)} ⟷ ${trunc(displayLabel(p.b.basename), 14)}`,
+        `coincidence · via ${trunc(displayLabel(p.via.label), 16)}`
+      );
+      btn(acts, "walk", true, () => void this.tracePath(p.a.path, p.b.path));
+      btn(acts, "forge", false, () => void this.forgePair(p.a.path, p.b.path));
+    }
+    const foot = el.createDiv({ cls: "rg-wi-foot" });
+    btn(foot, "shuffle", false, () => (this._drawOffset++, this.renderWaysIn()));
   }
 
   /** Forge an arbitrary pair (today's door) with an Undo Notice; advance to the next door. */
@@ -646,8 +657,8 @@ export class RhizoneFacetView extends ItemView {
         await this.host.removeConnection(a, b);
         new Notice("connection removed");
       });
-      this._drawOffset++;
-      this.renderDaily();
+      this._ripeCache = null; // the forged pair is now resident — drop it from the pool
+      this.renderWaysIn();
     } catch (e) {
       new Notice("forge failed: " + String((e as Error)?.message ?? e));
     }
@@ -842,7 +853,7 @@ export class RhizoneFacetView extends ItemView {
       this.drawCenter(null);
       this.drawLinks();
       this.hidePanel();
-      this.renderDaily(); // the reading fills the empty centre
+      this.renderWaysIn(); // the ways-in fill the empty centre
       if (this._path) this.drawPathOverlay();
       return;
     }

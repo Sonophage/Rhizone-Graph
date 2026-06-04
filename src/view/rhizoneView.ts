@@ -582,6 +582,7 @@ export class RhizoneFacetView extends ItemView {
       const notes = this.host.notesForFacet(node.key);
       if (notes.length !== 2) continue;
       if (linked.has(pk(notes[0].path, notes[1].path))) continue; // already a resident path
+      if (kindOf(notes[0]) === kindOf(notes[1])) continue; // siblings in one collection (two albums by an artist, two films by a director) — obvious, not a coincidence
       // how little else do they share? joined by ONE rare thread = true strangers
       const fa = new Set(this.host.noteFacets(notes[0].path));
       let shared = 0;
@@ -1173,6 +1174,14 @@ function baseOf(p: string): string {
 }
 function displayLabel(label: string): string {
   return label.replace(/^[A-Z][A-Za-z]+ - /, "");
+}
+/** The "kind" of a note: its type prefix ("Movies - " → movies) or, failing that, its folder.
+ * Two notes of the same kind are siblings in a collection, not a coincidence. */
+function kindOf(n: NoteRef): string {
+  const m = n.basename.match(/^([A-Z][A-Za-z]+) - /);
+  if (m) return "t:" + m[1].toLowerCase();
+  const i = n.path.lastIndexOf("/");
+  return "d:" + (i > 0 ? n.path.slice(0, i).toLowerCase() : "");
 }
 function trunc(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;

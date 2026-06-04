@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin, PluginSettingTab, Setting, TFile, debounce, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Plugin, PluginSettingTab, Setting, TFile, TFolder, debounce, type TAbstractFile, type WorkspaceLeaf } from "obsidian";
 import { FacetIndex } from "./src/engine/index.ts";
 import { buildLocalWeb, neighborEdges, phantomFacets, type PhantomFacet } from "./src/engine/cocitation.ts";
 import type { LocalWeb, NodeState } from "./src/engine/types.ts";
@@ -179,11 +179,14 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return buildFacetGraph(this.index);
   }
 
-  /** Is this note hidden from BOTH graphs (matches a configured path fragment)? */
+  /** Is this note inside a hidden folder (so it's kept out of BOTH graphs)? Prefix-precise. */
   isHidden(path: string): boolean {
     if (!this._settings.hidePaths.length) return false;
     const p = path.toLowerCase();
-    return this._settings.hidePaths.some((h) => h && p.includes(h.toLowerCase()));
+    return this._settings.hidePaths.some((h) => {
+      const f = h.toLowerCase();
+      return !!f && (p === f || p.startsWith(f + "/"));
+    });
   }
   hidePaths(): string[] {
     return this._settings.hidePaths;
@@ -576,22 +579,28 @@ class RhizoneSettingTab extends PluginSettingTab {
     this.containerEl.empty();
     new Setting(this.containerEl).setName("Rhizone").setHeading();
     new Setting(this.containerEl)
-      .setName("Hide from the graphs")
-      .setDesc(
-        "Path fragments to keep out of BOTH Reticular and Rhizone — one per line (e.g. Templates, Daily). " +
-          "Case-insensitive substring match on the note path. Hidden notes also won't auto-focus Reticular."
-      )
-      .addTextArea((ta) => {
-        ta.setPlaceholder("Templates\nDaily\n_attachments");
-        ta.setValue(this.plugin.hidePaths().join("\n"));
-        ta.inputEl.rows = 6;
-        ta.onChange((v) => {
-          const list = v
-            .split("\n")
-            .map((s) => s.trim())
-            .filter(Boolean);
-          this.plugin.setHidePaths(list);
+      .setName("Hide folders from the graphs")
+      .setDesc("Toggle folders to keep out of BOTH Reticular and Rhizone (templates, daily notes, attachments…). Hidden notes also won't auto-focus Reticular.");
+
+    const folders = this.app.vault
+      .getAllLoadedFiles()
+      .filter((f): f is TFolder => f instanceof TFolder && !!f.path && f.path !== "/")
+      .sort((a, b) => a.path.localeCompare(b.path));
+    const hidden = new Set(this.plugin.hidePaths());
+    if (!folders.length) {
+      this.containerEl.createDiv({ cls: "setting-item-description", text: "No folders in this vault." });
+      return;
+    }
+    for (const folder of folders) {
+      new Setting(this.containerEl).setName(folder.path).addToggle((t) => {
+        t.setValue(hidden.has(folder.path));
+        t.onChange((on) => {
+          const cur = new Set(this.plugin.hidePaths());
+          if (on) cur.add(folder.path);
+          else cur.delete(folder.path);
+          this.plugin.setHidePaths([...cur]);
         });
       });
+    }
   }
 }

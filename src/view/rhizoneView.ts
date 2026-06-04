@@ -108,6 +108,9 @@ export class RhizoneFacetView extends ItemView {
   private _trailAt = -1; // current position in the trail (for back/forward)
   private _stairsBuilt = 0; // forges this session
   private _trailEl: HTMLElement | null = null;
+  private _signal = new Map<string, number>(); // per-note co-citation reach → dot size
+  private _sigMax = 1;
+  private _constEl: SVGElement | null = null; // constellation name labels
   private _searchSeq = 0; // guards against out-of-order async search results
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
@@ -156,6 +159,7 @@ export class RhizoneFacetView extends ItemView {
     this._ghostEls.clear();
     this._centerEl = null;
     this._linksEl = null;
+    this._constEl = null;
     this._path = null;
     this._ripeCache = null;
     this._pos.clear();
@@ -275,11 +279,22 @@ export class RhizoneFacetView extends ItemView {
     const oppPos = new Map<string, { x: number; y: number }>();
     oppList.forEach((n, i) => oppPos.set(n.path, ringXY(i, oppList.length, R_OUT)));
 
+    // signal: how woven into the vault each note is (its co-citation reach) → dot size
+    const sg = this.graph();
+    this._signal.clear();
+    this._sigMax = 1;
+    for (const n of this.notes) {
+      let s = 0;
+      for (const k of this.host.noteFacets(n.path)) s += sg.nodes.get(k)?.df ?? 0;
+      this._signal.set(n.path, s);
+      if (s > this._sigMax) this._sigMax = s;
+    }
+
     // every note becomes a persistent dot we later slide around
     for (const n of this.notes) {
       const p0 = oppPos.get(n.path) ?? { x: C, y: C };
       const g = pan.createSvg("g", { cls: ["rg-gx-note"], attr: { "data-path": n.path, transform: `translate(${p0.x} ${p0.y})` } });
-      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: DOT } });
+      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: String(this.sizeFor(this._signal.get(n.path) ?? 0)) } });
       g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
         trunc(displayLabel(n.basename), 28)
       );
@@ -457,7 +472,7 @@ export class RhizoneFacetView extends ItemView {
   /** The connections panel: the keystone's kin (notes + unwritten ghost-kin) with the WHY + actions. */
   private renderPanel(
     ks: { kind: "note" | "facet"; key: string },
-    related: { path: string; basename: string; via: { key: string; label: string } }[],
+    related: { path: string; basename: string; rarestDf?: number; via: { key: string; label: string } }[],
     ghostKin: string[]
   ): void {
     const p = this._panelEl;
@@ -482,7 +497,8 @@ export class RhizoneFacetView extends ItemView {
       list.createDiv({ cls: "rg-cx-empty", text: "no undrawn kin — everything here is already connected" });
     }
     for (const r of related) {
-      const el = row("rg-cx-row", displayLabel(baseOf(r.path)), `via ${trunc(displayLabel(r.via.label), 22)}`);
+      const why = `via ${trunc(displayLabel(r.via.label), 20)}${r.rarestDf ? ` · df ${r.rarestDf}` : ""}`;
+      const el = row("rg-cx-row", displayLabel(baseOf(r.path)), why);
       const acts = el.createSpan({ cls: "rg-cx-acts" });
       btn(acts, "open", () => this.runAction("open", { kind: "note", key: r.path }));
       btn(acts, "forge", () => this.runAction("forge", { kind: "note", key: r.path }));
@@ -914,6 +930,7 @@ export class RhizoneFacetView extends ItemView {
       this.drawLinks();
       this.hidePanel();
       this.renderWaysIn(); // the ways-in fill the empty centre
+      this.drawConstellations(ordered); // name the regions
       if (this._path) this.drawPathOverlay();
       return;
     }
@@ -966,6 +983,7 @@ export class RhizoneFacetView extends ItemView {
     this.drawLinks();
     this.renderPanel(ks, innerNotes, ghostKin);
     this.hideDaily();
+    this.drawConstellations(ordered); // (removes the labels while focused)
     if (this._path) this.drawPathOverlay();
   }
 
@@ -1009,6 +1027,41 @@ export class RhizoneFacetView extends ItemView {
     g.classList.toggle("rg-related", s.related);
     g.classList.toggle("rg-linked", !!s.linked);
     this.fanLabel(g, p);
+  }
+
+  /** Dot radius from a note's co-citation reach (log-scaled): woven-in notes loom larger. */
+  private sizeFor(s: number): number {
+    const t = this._sigMax > 1 ? Math.log(1 + s) / Math.log(1 + this._sigMax) : 0;
+    return 3.5 + t * 5.5; // 3.5 .. 9
+  }
+
+  /** Name the constellations: a community label at the mid-angle of each cluster's arc (ambient). */
+  private drawConstellations(ordered: NoteRef[]): void {
+    this._constEl?.remove();
+    this._constEl = null;
+    if (!this._pan || this.keystone || this.order !== "cluster") return;
+    const g = this.graph();
+    const grp = this._pan.createSvg("g", { cls: ["rg-const"] });
+    this._pan.insertBefore(grp, this._pan.firstChild); // behind the dots
+    this._constEl = grp;
+    const emit = (start: number, end: number, key: string): void => {
+      if (!key || end - start + 1 < 4) return; // only label runs of ≥4 notes
+      const ang = -Math.PI / 2 + (((start + end) / 2) / ordered.length) * Math.PI * 2;
+      const r = R_OUT - 52;
+      const name = displayLabel(g.nodes.get(key)?.label ?? key).toUpperCase();
+      grp
+        .createSvg("text", { cls: ["rg-const-label"], attr: { x: C + Math.cos(ang) * r, y: C + Math.sin(ang) * r, "text-anchor": "middle" } })
+        .setText(trunc(name, 20));
+    };
+    let runStart = 0;
+    for (let i = 1; i <= ordered.length; i++) {
+      const prev = this.clusters[ordered[i - 1].path] ?? "";
+      const cur = i < ordered.length ? this.clusters[ordered[i].path] ?? "" : " ";
+      if (cur !== prev) {
+        emit(runStart, i - 1, prev);
+        runStart = i;
+      }
+    }
   }
 
   /** Fan a node's label outward from the galaxy centre, anchored by its angle. */

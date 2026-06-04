@@ -1143,6 +1143,16 @@
 .rg-trail-sep { color: var(--text-faint, #666); }
 .rg-trail-stairs { margin-left: auto; color: var(--text-faint, #888); font-style: italic; }
 
+/* constellation names — the community of each arc of the ring, faint behind the dots */
+.rg-const-label {
+  fill: var(--text-muted, #888);
+  font-family: var(--font-monospace, monospace);
+  font-size: 15px;
+  letter-spacing: 3px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .rg-gx-note { cursor: pointer; }
 /* ghost ring: phantom facets (referenced, never written) — normal dots, just faded */
 .rg-gx-ghost { opacity: 0.4; }

@@ -322,13 +322,15 @@ export class RhizoneFacetView extends ItemView {
     const oppGhost = [...this._ghosts].reverse();
     const oppGhostPos = new Map<string, { x: number; y: number }>();
     oppGhost.forEach((gh, i) => oppGhostPos.set(gh.key, ringXY(i, oppGhost.length, R_GHOST)));
+    let ghostMax = 1;
+    for (const gh of this._ghosts) ghostMax = Math.max(ghostMax, sg.nodes.get(gh.key)?.df ?? 0);
     for (const gh of this._ghosts) {
       const p0 = oppGhostPos.get(gh.key) ?? { x: C, y: C };
       const g = pan.createSvg("g", {
         cls: ["rg-gx-note", "rg-gx-ghost"],
         attr: { "data-ghost": gh.key, transform: `translate(${p0.x} ${p0.y})` }
       });
-      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: DOT } });
+      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: String(this.sizeFor(sg.nodes.get(gh.key)?.df ?? 0, ghostMax)) } });
       g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
         trunc(displayLabel(gh.label), 28)
       );
@@ -1029,9 +1031,9 @@ export class RhizoneFacetView extends ItemView {
     this.fanLabel(g, p);
   }
 
-  /** Dot radius from a note's co-citation reach (log-scaled): woven-in notes loom larger. */
-  private sizeFor(s: number): number {
-    const t = this._sigMax > 1 ? Math.log(1 + s) / Math.log(1 + this._sigMax) : 0;
+  /** Dot radius from a reach signal (log-scaled against its own max): woven-in nodes loom larger. */
+  private sizeFor(s: number, max = this._sigMax): number {
+    const t = max > 1 ? Math.log(1 + s) / Math.log(1 + max) : 0;
     return 3.5 + t * 5.5; // 3.5 .. 9
   }
 

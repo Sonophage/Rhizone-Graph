@@ -1219,8 +1219,9 @@
 /* connecting lines, laid behind the dots — the chord web reads as HEAT: faint solid threads
    that screen-blend, so where many overlap they build up into harder, brighter lines */
 .rg-gx-links { isolation: isolate; }
-.rg-gx-link { fill: none; stroke: var(--text-normal, #fff); stroke-width: 0.8; opacity: 0.14; mix-blend-mode: screen; } /* faint single chord; crossings build up brighter */
-.rg-gx-link.rg-gx-glink { opacity: 0.1; } /* note → ghost: joins the heat, a touch fainter */
+/* plus-lighter is ADDITIVE: overlapping chords sum, so dense crossings blow out bright */
+.rg-gx-link { fill: none; stroke: var(--text-normal, #fff); stroke-width: 0.8; opacity: 0.12; mix-blend-mode: plus-lighter; }
+.rg-gx-link.rg-gx-glink { opacity: 0.09; } /* note → ghost: joins the heat, a touch fainter */
 .rg-rz-focused .rg-gx-link { mix-blend-mode: normal; } /* heat is an ambient thing — clean lines once focused */
 .rg-anim .rg-gx-link { transition: opacity 160ms ease, stroke 160ms ease; }
 .rg-gx-tie { stroke: var(--rg-accent); stroke-width: 1; opacity: 0.3; } /* inner-ring note → the tree facet it cites */

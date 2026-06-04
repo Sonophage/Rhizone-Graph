@@ -543,6 +543,11 @@ export class RhizoneFacetView extends ItemView {
     const innerSet = new Set(related.map((r) => r.path));
     this._inner = innerSet;
 
+    // the keystone's unwritten doors — the phantom facets it calls — join the inner ring too
+    const ghostKeys = new Set(this._ghosts.map((g) => g.key));
+    const ghostKin = (ksNote ? this.host.noteFacets(ksNote) : []).filter((k) => ghostKeys.has(k));
+    const innerGhostSet = new Set(ghostKin);
+
     // outer notes with a direct link/connection into the active set (keystone + inner ring)
     const activeSet = new Set(innerSet);
     if (ksNote) activeSet.add(ksNote);
@@ -553,17 +558,22 @@ export class RhizoneFacetView extends ItemView {
     }
 
     if (ksNote) this.place(ksNote, { x: C, y: C }, { dim: false, related: false, keystone: true });
-    related.forEach((r, i) => {
-      if (r.path === ksNote) return;
-      this.place(r.path, ringXY(i, related.length, R_IN), { dim: false, related: true, keystone: false });
-    });
+    // one combined inner ring: note-kin first, then the unwritten ghost-kin
+    const innerNotes = related.filter((r) => r.path !== ksNote);
+    const innerTotal = innerNotes.length + ghostKin.length;
+    innerNotes.forEach((r, i) =>
+      this.place(r.path, ringXY(i, innerTotal, R_IN), { dim: false, related: true, keystone: false })
+    );
+    ghostKin.forEach((k, j) =>
+      this.placeGhost(k, ringXY(innerNotes.length + j, innerTotal, R_IN), { dim: false, related: true })
+    );
     const rest = ordered.filter((n) => n.path !== ksNote && !innerSet.has(n.path));
     rest.forEach((n, i) => {
       const linked = connected.has(n.path); // tied to the active set → stays lit + labelled
       this.place(n.path, ringXY(i, rest.length, R_OUT), { dim: !linked, related: false, keystone: false, linked });
     });
 
-    this.layoutGhosts(activeSet); // connected ghosts stay lit; the rest dim with the periphery
+    this.layoutGhosts(activeSet, innerGhostSet); // ghost-kin sit on the inner ring; the rest hold the edge
     this.drawCenter(ks);
     this.drawLinks();
   }
@@ -588,19 +598,26 @@ export class RhizoneFacetView extends ItemView {
    * Lay the ghost (phantom-facet) ring at the outer edge — same placement rules as the note rings.
    * In focus (activeSet given), a ghost whose calling note is in the active set stays lit + named.
    */
-  private layoutGhosts(activeSet: Set<string> | null): void {
+  private layoutGhosts(activeSet: Set<string> | null, innerGhosts?: Set<string>): void {
     const focused = activeSet !== null;
-    this._ghosts.forEach((gh, i) => {
-      const g = this._ghostEls.get(gh.key);
-      if (!g) return;
-      const p = ringXY(i, this._ghosts.length, R_GHOST);
-      this._pos.set(gh.key, p); // so chords to the notes that call this ghost can be drawn
-      g.setAttribute("transform", `translate(${p.x} ${p.y})`);
+    const edge = this._ghosts.filter((gh) => !innerGhosts?.has(gh.key)); // inner ghost-kin placed elsewhere
+    edge.forEach((gh, i) => {
+      const p = ringXY(i, edge.length, R_GHOST);
       const linked = focused && (this._adj.get(gh.key) ?? []).some((nb) => activeSet!.has(nb));
-      g.classList.toggle("rg-dim", focused && !linked);
-      g.classList.toggle("rg-linked", linked);
-      this.fanLabel(g, p);
+      this.placeGhost(gh.key, p, { dim: focused && !linked, related: false, linked });
     });
+  }
+
+  /** Position a ghost dot (mirror of place() for the _ghostEls map). */
+  private placeGhost(key: string, p: { x: number; y: number }, s: { dim: boolean; related: boolean; linked?: boolean }): void {
+    const g = this._ghostEls.get(key);
+    if (!g) return;
+    this._pos.set(key, p); // so chords to the notes that call this ghost can be drawn
+    g.setAttribute("transform", `translate(${p.x} ${p.y})`);
+    g.classList.toggle("rg-dim", s.dim);
+    g.classList.toggle("rg-related", s.related);
+    g.classList.toggle("rg-linked", !!s.linked);
+    this.fanLabel(g, p);
   }
 
   /** Fan a node's label outward from the galaxy centre, anchored by its angle. */

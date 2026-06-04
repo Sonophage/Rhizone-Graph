@@ -1069,6 +1069,46 @@
 .rg-cx-btn:hover { color: var(--rg-accent); border-color: var(--rg-accent); }
 .rg-cx-empty { padding: 12px; font-size: 11px; font-style: italic; color: var(--text-muted); }
 
+/* today's door — the centre "reading" in the empty ambient core */
+.rg-daily {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 440px;
+  padding: 18px 24px;
+  text-align: center;
+  background: var(--background-primary, #0c0c0c);
+  border: 1px solid var(--background-modifier-border, #333);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+.rg-daily[aria-hidden="true"] { display: none; }
+.rg-anim .rg-daily { animation: rg-fade-in 380ms ease; }
+.rg-daily-tag { font-family: var(--font-monospace, monospace); font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--rg-accent); }
+.rg-daily-pair { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.rg-daily-note { font-family: var(--font-monospace, monospace); font-size: 15px; color: var(--text-normal); }
+.rg-daily-join { color: var(--rg-accent); font-size: 17px; }
+.rg-daily-via { font-size: 12px; font-style: italic; color: var(--text-muted); }
+.rg-daily-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+.rg-daily-btn {
+  font-family: var(--font-monospace, monospace);
+  font-size: 11px;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--background-modifier-border, #333);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rg-daily-btn:hover { color: var(--rg-accent); border-color: var(--rg-accent); }
+.rg-daily-primary { color: var(--rg-accent); border-color: var(--rg-accent); }
+
 .rg-gx-note { cursor: pointer; }
 /* ghost ring: phantom facets (referenced, never written) — normal dots, just faded */
 .rg-gx-ghost { opacity: 0.4; }

@@ -90,6 +90,8 @@ export class RhizoneFacetView extends ItemView {
   private _searchEl: HTMLInputElement | null = null;
   private _resultsEl: HTMLElement | null = null; // search results panel (the three candidate doors)
   private _panelEl: HTMLElement | null = null; // connections panel (the kin list, on focus)
+  private _dailyEl: HTMLElement | null = null; // "today's door" reading (ambient centre)
+  private _drawOffset = 0; // "another" cycles the daily pool
   private _searchSeq = 0; // guards against out-of-order async search results
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
@@ -311,6 +313,8 @@ export class RhizoneFacetView extends ItemView {
 
     // connections panel — the readable, keyboard-reachable face of the kin (shown on focus)
     this._panelEl = root.createDiv({ cls: "rg-cx-panel", attr: { "aria-hidden": "true" } });
+    // today's door — a date-seeded ripe coincidence, offered in the empty centre (ambient)
+    this._dailyEl = root.createDiv({ cls: "rg-daily", attr: { "aria-hidden": "true" } });
 
     const legend = root.createDiv({ cls: "rg-tree-legend" });
     legend.createSpan({
@@ -539,6 +543,86 @@ export class RhizoneFacetView extends ItemView {
     }
   }
 
+  // ── today's door: a date-seeded ripe coincidence to forge ──
+  /** Ripe coincidences: pairs joined ONLY by a rare (df=2) facet and not yet connected. */
+  private ripePool(): { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] {
+    const g = this.graph();
+    const linked = new Set<string>();
+    const pk = (x: string, y: string): string => (x < y ? x + "|" + y : y + "|" + x);
+    for (const [x, y] of this._links) linked.add(pk(x, y));
+    const out: { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] = [];
+    for (const node of g.nodes.values()) {
+      if (node.df !== 2) continue; // exactly two notes → an unambiguous coincidence
+      const notes = this.host.notesForFacet(node.key);
+      if (notes.length !== 2) continue;
+      if (linked.has(pk(notes[0].path, notes[1].path))) continue; // already a resident path
+      out.push({ a: notes[0], b: notes[1], via: { key: node.key, label: node.label } });
+    }
+    return out.sort(
+      (x, y) => x.via.label.localeCompare(y.via.label) || x.a.basename.localeCompare(y.a.basename)
+    );
+  }
+
+  /** Pick today's door — stable per day (a ritual), cycled by "another". */
+  private dailyDoor(): { a: NoteRef; b: NoteRef; via: { key: string; label: string } } | null {
+    const pool = this.ripePool();
+    if (!pool.length) return null;
+    const seed = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    let h = 0;
+    for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return pool[(h + this._drawOffset) % pool.length];
+  }
+
+  private hideDaily(): void {
+    this._dailyEl?.setAttr("aria-hidden", "true");
+  }
+
+  /** Render the centre "reading" — today's coincidence with act-in-place buttons. */
+  private renderDaily(): void {
+    const el = this._dailyEl;
+    if (!el) return;
+    el.empty();
+    const door = this.cursor >= 0 || this.keystone ? null : this.dailyDoor();
+    if (!door) {
+      el.setAttr("aria-hidden", "true");
+      return;
+    }
+    el.setAttr("aria-hidden", "false");
+    el.createDiv({ cls: "rg-daily-tag", text: "today's door" });
+    const pair = el.createDiv({ cls: "rg-daily-pair" });
+    pair.createSpan({ cls: "rg-daily-note", text: trunc(displayLabel(door.a.basename), 24) });
+    pair.createSpan({ cls: "rg-daily-join", text: "⟷" });
+    pair.createSpan({ cls: "rg-daily-note", text: trunc(displayLabel(door.b.basename), 24) });
+    el.createDiv({ cls: "rg-daily-via", text: `joined only by ${displayLabel(door.via.label)}` });
+    const acts = el.createDiv({ cls: "rg-daily-acts" });
+    const btn = (label: string, primary: boolean, run: () => void): void => {
+      const b = acts.createEl("button", { cls: primary ? "rg-daily-btn rg-daily-primary" : "rg-daily-btn", text: label });
+      b.addEventListener("click", (e) => (e.stopPropagation(), run()));
+    };
+    btn("build the stair", true, () => void this.forgePair(door.a.path, door.b.path));
+    btn("open " + trunc(displayLabel(door.a.basename), 12), false, () => this.host.openNote(door.a.path));
+    btn("open " + trunc(displayLabel(door.b.basename), 12), false, () => this.host.openNote(door.b.path));
+    btn("another", false, () => (this._drawOffset++, this.renderDaily()));
+  }
+
+  /** Forge an arbitrary pair (today's door) with an Undo Notice; advance to the next door. */
+  private async forgePair(a: string, b: string): Promise<void> {
+    try {
+      await this.host.forge(a, b);
+      const n = new Notice(`forged · ${displayLabel(baseOf(a))} ↔ ${displayLabel(baseOf(b))}`, 6000);
+      const undo = n.noticeEl.createEl("button", { cls: "rg-undo-btn", text: "undo" });
+      undo.addEventListener("click", async () => {
+        n.hide();
+        await this.host.removeConnection(a, b);
+        new Notice("connection removed");
+      });
+      this._drawOffset++;
+      this.renderDaily();
+    } catch (e) {
+      new Notice("forge failed: " + String((e as Error)?.message ?? e));
+    }
+  }
+
   private setKeystone(k: { kind: "note" | "facet"; key: string }): void {
     const same = !!this.keystone && this.keystone.kind === k.kind && this.keystone.key === k.key;
     this.keystone = same ? null : k;
@@ -595,6 +679,7 @@ export class RhizoneFacetView extends ItemView {
     this._noteEls.get(note.path)?.classList.add("rg-cursor");
     this.highlightConnections(note.path); // light its chords + reveal its connected notes' labels
     this.host.syncScope(note.path); // the resident graph tracks whatever's highlighted
+    this.hideDaily(); // roaming → the scan readout takes the centre
     this.updateScanTitle();
   }
 
@@ -668,6 +753,7 @@ export class RhizoneFacetView extends ItemView {
       this.drawCenter(null);
       this.drawLinks();
       this.hidePanel();
+      this.renderDaily(); // the reading fills the empty centre
       return;
     }
 
@@ -718,6 +804,7 @@ export class RhizoneFacetView extends ItemView {
     this.drawCenter(ks);
     this.drawLinks();
     this.renderPanel(ks, innerNotes, ghostKin);
+    this.hideDaily();
   }
 
   private place(

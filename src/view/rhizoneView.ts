@@ -104,6 +104,10 @@ export class RhizoneFacetView extends ItemView {
   private _drawOffset = 0; // "shuffle" rotates the ways-in
   private _ripeCache: { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] | null = null;
   private _path: { notes: NoteRef[]; hops: { via: { key: string; label: string }; df: number }[] } | null = null;
+  private _trail: { kind: "note" | "facet"; key: string }[] = []; // the doors walked this session
+  private _trailAt = -1; // current position in the trail (for back/forward)
+  private _stairsBuilt = 0; // forges this session
+  private _trailEl: HTMLElement | null = null;
   private _searchSeq = 0; // guards against out-of-order async search results
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
@@ -228,6 +232,9 @@ export class RhizoneFacetView extends ItemView {
     this._resultsEl.addEventListener("click", (e) => {
       if (e.target === this._resultsEl) (search.value = "", this.clearResults()); // click the dim backdrop → close
     });
+
+    // ── trail: the doors you've walked this session (retraceable) ──
+    this._trailEl = root.createDiv({ cls: "rg-trail" });
 
     // ── stage / svg ──
     const stage = root.createDiv({ cls: "rg-tree-stage" });
@@ -563,6 +570,7 @@ export class RhizoneFacetView extends ItemView {
     if (!path) return void new Notice("could not create the note");
     if (this.keystone?.kind === "note") {
       await this.host.forge(this.keystone.key, path);
+      this.bumpStairs();
       new Notice(`created · ${displayLabel(label)} — linked to ${displayLabel(baseOf(this.keystone.key))}`);
     } else {
       new Notice(`created · ${displayLabel(label)}`);
@@ -655,8 +663,11 @@ export class RhizoneFacetView extends ItemView {
       undo.addEventListener("click", async () => {
         n.hide();
         await this.host.removeConnection(a, b);
+        this._stairsBuilt = Math.max(0, this._stairsBuilt - 1);
+        this.renderTrail();
         new Notice("connection removed");
       });
+      this.bumpStairs();
       this._ripeCache = null; // the forged pair is now resident — drop it from the pool
       this.renderWaysIn();
     } catch (e) {
@@ -721,13 +732,14 @@ export class RhizoneFacetView extends ItemView {
     this.layout();
   }
 
-  private setKeystone(k: { kind: "note" | "facet"; key: string }): void {
-    const same = !!this.keystone && this.keystone.kind === k.kind && this.keystone.key === k.key;
+  private setKeystone(k: { kind: "note" | "facet"; key: string }, viaTrail = false): void {
+    const same = !viaTrail && !!this.keystone && this.keystone.kind === k.kind && this.keystone.key === k.key;
     this.keystone = same ? null : k;
     this.cursor = -1;
     this._noteEls.forEach((g) => g.classList.remove("rg-cursor"));
     this._path = null; // a new keystone ends any traced path
     this.highlightConnections(null); // reset any hover spotlight before the new state
+    if (this.keystone && !viaTrail) this.pushTrail(this.keystone); // record the door walked
     if (this.keystone) {
       this.panToCenter();
       if (this.host.animations()) this.arrivalPulse();
@@ -736,6 +748,50 @@ export class RhizoneFacetView extends ItemView {
     if (this.keystone && this.keystone.kind === "note") this.host.openInScope(this.keystone.key);
     this.layout();
   }
+  // ── the trail: doors walked + stairs built this session ──
+  private pushTrail(k: { kind: "note" | "facet"; key: string }): void {
+    const tail = this._trail[this._trailAt];
+    if (tail && tail.kind === k.kind && tail.key === k.key) return; // already standing here
+    this._trail = this._trail.slice(0, this._trailAt + 1);
+    this._trail.push({ kind: k.kind, key: k.key });
+    if (this._trail.length > 24) this._trail.shift();
+    this._trailAt = this._trail.length - 1;
+  }
+
+  private jumpTrail(i: number): void {
+    const t = this._trail[i];
+    if (!t) return;
+    this._trailAt = i;
+    this.setKeystone({ kind: t.kind, key: t.key }, true); // re-walk without re-recording
+  }
+
+  private bumpStairs(): void {
+    this._stairsBuilt++;
+    this.renderTrail();
+  }
+
+  /** The retraceable research path: the doors walked + a count of the stairs built. */
+  private renderTrail(): void {
+    const el = this._trailEl;
+    if (!el) return;
+    el.empty();
+    if (this._trail.length <= 1 && !this._stairsBuilt) return void el.toggleClass("is-hidden", true);
+    el.toggleClass("is-hidden", false);
+    this._trail.forEach((t, i) => {
+      if (i > 0) el.createSpan({ cls: "rg-trail-sep", text: "›" });
+      const here = i === this._trailAt;
+      const crumb = el.createSpan({
+        cls: "rg-trail-crumb" + (here ? " is-here" : ""),
+        text: trunc(displayLabel(t.kind === "note" ? baseOf(t.key) : t.key), 18),
+        attr: { role: "button", "aria-current": here ? "true" : "false" }
+      });
+      crumb.addEventListener("click", () => this.jumpTrail(i));
+    });
+    if (this._stairsBuilt) {
+      el.createSpan({ cls: "rg-trail-stairs", text: `⚒ ${this._stairsBuilt} ${this._stairsBuilt === 1 ? "stair" : "stairs"} built` });
+    }
+  }
+
   private release(): void {
     if (!this.keystone && !this._path) return;
     this.keystone = null;
@@ -761,8 +817,11 @@ export class RhizoneFacetView extends ItemView {
       undo.addEventListener("click", async () => {
         n.hide();
         await this.host.removeConnection(ksPath, path);
+        this._stairsBuilt = Math.max(0, this._stairsBuilt - 1);
+        this.renderTrail();
         new Notice("connection removed");
       });
+      this.bumpStairs();
     } catch (e) {
       new Notice("forge failed: " + String((e as Error)?.message ?? e));
     }
@@ -844,6 +903,7 @@ export class RhizoneFacetView extends ItemView {
     this._releaseEl?.toggleClass("is-hidden", !ks);
     this.contentEl.toggleClass("rg-rz-focused", !!ks);
     this.updateScanTitle();
+    this.renderTrail();
 
     if (!ks) {
       // ambient — everyone on the outer ring, undimmed, labels on hover only

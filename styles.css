@@ -1124,6 +1124,25 @@
 .rg-daily-btn:hover { color: var(--rg-accent); border-color: var(--rg-accent); }
 .rg-daily-primary { color: var(--rg-accent); border-color: var(--rg-accent); }
 
+/* the trail — doors walked + stairs built this session (retraceable) */
+.rg-trail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 12px;
+  font-family: var(--font-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border, #333);
+}
+.rg-trail.is-hidden { display: none; }
+.rg-trail-crumb { cursor: pointer; color: var(--text-muted); }
+.rg-trail-crumb:hover { color: var(--rg-accent); }
+.rg-trail-crumb.is-here { color: var(--rg-accent); }
+.rg-trail-sep { color: var(--text-faint, #666); }
+.rg-trail-stairs { margin-left: auto; color: var(--text-faint, #888); font-style: italic; }
+
 .rg-gx-note { cursor: pointer; }
 /* ghost ring: phantom facets (referenced, never written) — normal dots, just faded */
 .rg-gx-ghost { opacity: 0.4; }

@@ -1055,7 +1055,7 @@ export class RhizoneFacetView extends ItemView {
     const emit = (start: number, end: number, key: string): void => {
       if (!key || end - start + 1 < 4) return; // only label runs of ≥4 notes
       const ang = -Math.PI / 2 + (((start + end) / 2) / ordered.length) * Math.PI * 2;
-      const r = R_OUT - 52;
+      const r = R_OUT - 95; // tucked inside the note ring, clear of the ghost ring
       const name = displayLabel(g.nodes.get(key)?.label ?? key).toUpperCase();
       grp
         .createSvg("text", { cls: ["rg-const-label"], attr: { x: C + Math.cos(ang) * r, y: C + Math.sin(ang) * r, "text-anchor": "middle" } })

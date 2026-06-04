@@ -423,4 +423,10 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     for (const v of this.getScopeViews()) v.setFocus(path);
   }
 
+  /** Open a note in the editor (optionally a new tab). */
+  openNote(path: string, newLeaf = false): void {
+    const f = this.app.vault.getAbstractFileByPath(path);
+    if (f instanceof TFile) void this.app.workspace.getLeaf(newLeaf ? "tab" : false).openFile(f);
+  }
+
 }

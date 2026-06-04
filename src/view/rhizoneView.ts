@@ -1,4 +1,4 @@
-import { ItemView, Notice, debounce, type WorkspaceLeaf, type App } from "obsidian";
+import { ItemView, Menu, Notice, debounce, type WorkspaceLeaf, type App } from "obsidian";
 import { buildTreeFromGraph, type Tree } from "../engine/tree.ts";
 import { subgraph, type FacetGraph } from "../engine/facetGraph.ts";
 
@@ -37,6 +37,8 @@ export interface RhizoneHost {
   noteExcerpt(path: string, len?: number): Promise<string>;
   /** Weld a bidirectional connections: edge between two notes (graduates the pair into Reticular). */
   forge(focusPath: string, candidatePath: string): Promise<void>;
+  /** Open a note in the editor (optionally a new tab). */
+  openNote(path: string, newLeaf?: boolean): void;
   /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
   openInScope(path: string): void;
   /** Point an already-open Reticular Scope at a note without revealing it (live highlight sync). */
@@ -49,6 +51,9 @@ interface NoteRef {
   path: string;
   basename: string;
 }
+
+/** A clickable thing in the galaxy: a note dot or a ghost (phantom-facet) dot. */
+type GxTarget = { kind: "note"; key: string } | { kind: "ghost"; key: string };
 
 /**
  * Rhizone — the focus+context galaxy. Every note sits on an ever-present outer ring; the centre is
@@ -249,12 +254,12 @@ export class RhizoneFacetView extends ItemView {
       );
       g.addEventListener("click", (e) => {
         e.stopPropagation();
-        // alt-click a rare kin in focus → forge the coincidence into a real connection
+        // alt-click a rare kin in focus → forge straight away (power shortcut)
         if (e.altKey && this.keystone?.kind === "note" && this._inner.has(n.path)) {
           void this.forgeWith(n.path);
           return;
         }
-        this.setKeystone({ kind: "note", key: n.path });
+        this.openNodeMenu({ kind: "note", key: n.path }, e); // click → actions
       });
       g.addEventListener("mouseover", () => {
         this._hover = n.path;
@@ -283,7 +288,7 @@ export class RhizoneFacetView extends ItemView {
       );
       g.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.setKeystone({ kind: "facet", key: gh.key }); // enter the unwritten door
+        this.openNodeMenu({ kind: "ghost", key: gh.key }, e);
       });
       g.addEventListener("mouseover", () => this.highlightConnections(gh.key));
       g.addEventListener("mouseout", () => this.highlightConnections(null));
@@ -298,7 +303,7 @@ export class RhizoneFacetView extends ItemView {
 
     const legend = root.createDiv({ cls: "rg-tree-legend" });
     legend.createSpan({
-      text: "click a note to summon · ←/→ or scroll to roam · alt-click a kin to forge (it graduates to Reticular) · ctrl-scroll zoom · drag pan"
+      text: "click a node for actions · ←/→ or scroll to roam · enter summons · alt-click a kin to forge · ctrl-scroll zoom · drag pan"
     });
 
     this.applyTransform();
@@ -405,6 +410,45 @@ export class RhizoneFacetView extends ItemView {
     if (this._searchEl) this._searchEl.value = "";
     this.clearResults();
     this.setKeystone({ kind: "note", key: pick.path });
+  }
+
+  /** Open the action menu for a galaxy node (click). Actions route through runAction(). */
+  private openNodeMenu(t: GxTarget, evt: MouseEvent): void {
+    const menu = new Menu();
+    if (t.kind === "note") {
+      menu.addItem((i) => i.setTitle("Summon").setIcon("crosshair").onClick(() => this.runAction("summon", t)));
+      menu.addItem((i) => i.setTitle("Open note").setIcon("file-text").onClick(() => this.runAction("open", t)));
+      menu.addItem((i) => i.setTitle("Open in new pane").setIcon("columns").onClick(() => this.runAction("open-pane", t)));
+      if (this.keystone?.kind === "note" && this._inner.has(t.key)) {
+        menu.addItem((i) => i.setTitle("Forge connection").setIcon("link").onClick(() => this.runAction("forge", t)));
+      }
+      menu.addItem((i) => i.setTitle("Reveal in Reticular").setIcon("git-fork").onClick(() => this.runAction("reveal", t)));
+    } else {
+      menu.addItem((i) => i.setTitle("Enter the unwritten door").setIcon("door-open").onClick(() => this.runAction("summon", t)));
+      // "Create note" (forge-from-ghost) lands in P3
+    }
+    menu.showAtMouseEvent(evt);
+  }
+
+  /** Single dispatcher for every node action (menu / panel rows / keyboard / alt-click share it). */
+  private runAction(verb: string, t: GxTarget): void {
+    switch (verb) {
+      case "summon":
+        this.setKeystone(t.kind === "note" ? { kind: "note", key: t.key } : { kind: "facet", key: t.key });
+        break;
+      case "open":
+        if (t.kind === "note") this.host.openNote(t.key);
+        break;
+      case "open-pane":
+        if (t.kind === "note") this.host.openNote(t.key, true);
+        break;
+      case "forge":
+        if (t.kind === "note") void this.forgeWith(t.key);
+        break;
+      case "reveal":
+        if (t.kind === "note") this.host.openInScope(t.key);
+        break;
+    }
   }
 
   private setKeystone(k: { kind: "note" | "facet"; key: string }): void {

@@ -25,8 +25,11 @@ export interface RhizoneHost {
   allNotes(): { path: string; basename: string }[];
   /** A note's facet keys (to seed from a note keystone). */
   noteFacets(path: string): string[];
-  /** Notes sharing any of `facetKeys`, rarity-ranked. */
-  relatedNotes(facetKeys: string[], exclude?: string): { path: string; basename: string; rarestDf: number }[];
+  /** Notes sharing any of `facetKeys`, rarity-ranked, with the rarest shared facet as the "why". */
+  relatedNotes(
+    facetKeys: string[],
+    exclude?: string
+  ): { path: string; basename: string; rarestDf: number; via: { key: string; label: string } }[];
   /** Direct note→note links/connections across the whole vault (the ambient chord web). */
   noteLinks(): Array<[string, string]>;
   /** path → facet-community label (for cluster ordering). */
@@ -37,6 +40,10 @@ export interface RhizoneHost {
   noteExcerpt(path: string, len?: number): Promise<string>;
   /** Weld a bidirectional connections: edge between two notes (graduates the pair into Reticular). */
   forge(focusPath: string, candidatePath: string): Promise<void>;
+  /** Undo a forge — drop the bidirectional edge. */
+  removeConnection(focusPath: string, candidatePath: string): Promise<void>;
+  /** Create the unwritten note behind a phantom facet (empty), open it, return its path. */
+  createGhostNote(key: string): Promise<string | null>;
   /** Open a note in the editor (optionally a new tab). */
   openNote(path: string, newLeaf?: boolean): void;
   /** Reveal the Reticular Scope focused on a note (the resident view of what you summoned). */
@@ -82,6 +89,7 @@ export class RhizoneFacetView extends ItemView {
   private _scanTitleEl: SVGElement | null = null; // the note under the roam cursor, shown in the ring's centre
   private _searchEl: HTMLInputElement | null = null;
   private _resultsEl: HTMLElement | null = null; // search results panel (the three candidate doors)
+  private _panelEl: HTMLElement | null = null; // connections panel (the kin list, on focus)
   private _searchSeq = 0; // guards against out-of-order async search results
   private _titleEl: HTMLElement | null = null;
   private _releaseEl: HTMLElement | null = null;
@@ -301,6 +309,9 @@ export class RhizoneFacetView extends ItemView {
       attr: { x: String(C), y: String(C), "text-anchor": "middle" }
     });
 
+    // connections panel — the readable, keyboard-reachable face of the kin (shown on focus)
+    this._panelEl = root.createDiv({ cls: "rg-cx-panel", attr: { "aria-hidden": "true" } });
+
     const legend = root.createDiv({ cls: "rg-tree-legend" });
     legend.createSpan({
       text: "click a node for actions · ←/→ or scroll to roam · enter summons · alt-click a kin to forge · ctrl-scroll zoom · drag pan"
@@ -412,6 +423,62 @@ export class RhizoneFacetView extends ItemView {
     this.setKeystone({ kind: "note", key: pick.path });
   }
 
+  private hidePanel(): void {
+    if (!this._panelEl) return;
+    this._panelEl.empty();
+    this._panelEl.setAttr("aria-hidden", "true");
+  }
+
+  /** The connections panel: the keystone's kin (notes + unwritten ghost-kin) with the WHY + actions. */
+  private renderPanel(
+    ks: { kind: "note" | "facet"; key: string },
+    related: { path: string; basename: string; via: { key: string; label: string } }[],
+    ghostKin: string[]
+  ): void {
+    const p = this._panelEl;
+    if (!p) return;
+    p.empty();
+    p.setAttr("aria-hidden", "false");
+    p.createDiv({ cls: "rg-cx-head", text: `kin · ${displayLabel(ks.kind === "note" ? baseOf(ks.key) : ks.key)}` });
+    const list = p.createDiv({ cls: "rg-cx-list" });
+
+    const row = (cls: string, name: string, why: string): HTMLElement => {
+      const r = list.createDiv({ cls, attr: { tabindex: "0", role: "button" } });
+      r.createSpan({ cls: "rg-cx-name", text: trunc(name, 28) });
+      r.createSpan({ cls: "rg-cx-via", text: why });
+      return r;
+    };
+    const btn = (host: HTMLElement, label: string, run: () => void): void => {
+      const b = host.createEl("button", { cls: "rg-cx-btn", text: label });
+      b.addEventListener("click", (e) => (e.stopPropagation(), run()));
+    };
+
+    if (!related.length && !ghostKin.length) {
+      list.createDiv({ cls: "rg-cx-empty", text: "no undrawn kin — everything here is already connected" });
+    }
+    for (const r of related) {
+      const el = row("rg-cx-row", displayLabel(baseOf(r.path)), `via ${trunc(displayLabel(r.via.label), 22)}`);
+      const acts = el.createSpan({ cls: "rg-cx-acts" });
+      btn(acts, "open", () => this.runAction("open", { kind: "note", key: r.path }));
+      btn(acts, "forge", () => this.runAction("forge", { kind: "note", key: r.path }));
+      el.addEventListener("mouseover", () => this.highlightConnections(r.path));
+      el.addEventListener("mouseout", () => this.highlightConnections(null));
+      el.addEventListener("click", () => this.runAction("summon", { kind: "note", key: r.path }));
+      el.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter") this.runAction("summon", { kind: "note", key: r.path });
+      });
+    }
+    for (const k of ghostKin) {
+      const label = this._ghosts.find((g) => g.key === k)?.label ?? k;
+      const el = row("rg-cx-row rg-cx-ghost", displayLabel(label), "unwritten");
+      const acts = el.createSpan({ cls: "rg-cx-acts" });
+      btn(acts, "create", () => this.runAction("create", { kind: "ghost", key: k }));
+      el.addEventListener("mouseover", () => this.highlightConnections(k));
+      el.addEventListener("mouseout", () => this.highlightConnections(null));
+      el.addEventListener("click", () => this.runAction("summon", { kind: "ghost", key: k }));
+    }
+  }
+
   /** Open the action menu for a galaxy node (click). Actions route through runAction(). */
   private openNodeMenu(t: GxTarget, evt: MouseEvent): void {
     const menu = new Menu();
@@ -425,7 +492,12 @@ export class RhizoneFacetView extends ItemView {
       menu.addItem((i) => i.setTitle("Reveal in Reticular").setIcon("git-fork").onClick(() => this.runAction("reveal", t)));
     } else {
       menu.addItem((i) => i.setTitle("Enter the unwritten door").setIcon("door-open").onClick(() => this.runAction("summon", t)));
-      // "Create note" (forge-from-ghost) lands in P3
+      menu.addItem((i) =>
+        i
+          .setTitle(this.keystone?.kind === "note" ? "Create note + link to keystone" : "Create note")
+          .setIcon("file-plus")
+          .onClick(() => this.runAction("create", t))
+      );
     }
     menu.showAtMouseEvent(evt);
   }
@@ -448,6 +520,22 @@ export class RhizoneFacetView extends ItemView {
       case "reveal":
         if (t.kind === "note") this.host.openInScope(t.key);
         break;
+      case "create":
+        if (t.kind === "ghost") void this.createFromGhost(t.key);
+        break;
+    }
+  }
+
+  /** Forge-from-ghost: write the unwritten note, and if focused, link it to the keystone. */
+  private async createFromGhost(key: string): Promise<void> {
+    const label = this._ghosts.find((g) => g.key === key)?.label ?? key;
+    const path = await this.host.createGhostNote(key);
+    if (!path) return void new Notice("could not create the note");
+    if (this.keystone?.kind === "note") {
+      await this.host.forge(this.keystone.key, path);
+      new Notice(`created · ${displayLabel(label)} — linked to ${displayLabel(baseOf(this.keystone.key))}`);
+    } else {
+      new Notice(`created · ${displayLabel(label)}`);
     }
   }
 
@@ -480,9 +568,17 @@ export class RhizoneFacetView extends ItemView {
   private async forgeWith(path: string): Promise<void> {
     const ks = this.keystone;
     if (!ks || ks.kind !== "note") return;
+    const ksPath = ks.key;
+    this._noteEls.get(path)?.classList.add("rg-graduating"); // felt settle before the rebuild lands
     try {
-      await this.host.forge(ks.key, path);
-      new Notice(`forged · ${displayLabel(baseOf(ks.key))} ↔ ${displayLabel(baseOf(path))}`);
+      await this.host.forge(ksPath, path);
+      const n = new Notice(`forged · ${displayLabel(baseOf(ksPath))} ↔ ${displayLabel(baseOf(path))}`, 6000);
+      const undo = n.noticeEl.createEl("button", { cls: "rg-undo-btn", text: "undo" });
+      undo.addEventListener("click", async () => {
+        n.hide();
+        await this.host.removeConnection(ksPath, path);
+        new Notice("connection removed");
+      });
     } catch (e) {
       new Notice("forge failed: " + String((e as Error)?.message ?? e));
     }
@@ -571,6 +667,7 @@ export class RhizoneFacetView extends ItemView {
       this.layoutGhosts(null);
       this.drawCenter(null);
       this.drawLinks();
+      this.hidePanel();
       return;
     }
 
@@ -620,6 +717,7 @@ export class RhizoneFacetView extends ItemView {
     this.layoutGhosts(activeSet, innerGhostSet); // ghost-kin sit on the inner ring; the rest hold the edge
     this.drawCenter(ks);
     this.drawLinks();
+    this.renderPanel(ks, innerNotes, ghostKin);
   }
 
   private place(

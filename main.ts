@@ -3,7 +3,7 @@ import { FacetIndex } from "./src/engine/index.ts";
 import { buildLocalWeb, neighborEdges, phantomFacets, type PhantomFacet } from "./src/engine/cocitation.ts";
 import type { LocalWeb, NodeState } from "./src/engine/types.ts";
 import { buildRecords, recordFromCache } from "./src/obsidian/adapter.ts";
-import { forge } from "./src/obsidian/connections.ts";
+import { forge, unforge } from "./src/obsidian/connections.ts";
 import { buildTree as computeTree, type Tree } from "./src/engine/tree.ts";
 import { buildFacetGraph, detectCommunities, isContentTitle, type FacetGraph } from "./src/engine/facetGraph.ts";
 import { ReticularView, RETICULAR_VIEW_TYPE, type ScopeHost } from "./src/view/ringView.ts";
@@ -187,21 +187,27 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     return this.index.get(path)?.facetKeys ?? [];
   }
 
-  /** Notes sharing any of `facetKeys`, ranked rarity-first (rarest shared facet wins). */
-  relatedNotes(facetKeys: string[], exclude?: string): { path: string; basename: string; rarestDf: number }[] {
+  /** Notes sharing any of `facetKeys`, ranked rarity-first (rarest shared facet wins), with the WHY. */
+  relatedNotes(
+    facetKeys: string[],
+    exclude?: string
+  ): { path: string; basename: string; rarestDf: number; via: { key: string; label: string } }[] {
     this.ensureIndex();
-    const rarest = new Map<string, number>(); // path → df of the rarest facet it shares
+    const rarest = new Map<string, { df: number; key: string }>(); // path → its rarest shared facet
     for (const key of new Set(facetKeys)) {
       if (isContentTitle(key)) continue;
       const df = this.index.df(key);
       for (const p of this.index.notesWithFacet(key)) {
         if (p === exclude) continue;
         const cur = rarest.get(p);
-        if (cur === undefined || df < cur) rarest.set(p, df);
+        if (cur === undefined || df < cur.df) rarest.set(p, { df, key });
       }
     }
     return [...rarest]
-      .map(([path, rarestDf]) => ({ path, basename: this.index.get(path)?.basename ?? path, rarestDf }))
+      .map(([path, { df, key }]) => {
+        const rec = this.index.get(path);
+        return { path, basename: rec?.basename ?? path, rarestDf: df, via: { key, label: rec?.facetLabels[key] ?? key } };
+      })
       .sort((a, b) => a.rarestDf - b.rarestDf || a.basename.localeCompare(b.basename));
   }
 
@@ -367,13 +373,55 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     this.bumpConnection(candidatePath, a.basename);
   }
 
-  /** Optimistically record a connection in the in-memory index record. */
-  private bumpConnection(path: string, targetBasename: string): void {
+  /** Undo a forge: drop the bidirectional connections: edge (for the forge Notice's undo). */
+  async removeConnection(focusPath: string, candidatePath: string): Promise<void> {
+    const a = this.fileForPath(focusPath);
+    const b = this.fileForPath(candidatePath);
+    if (!a || !b) return;
+    await unforge(this.app, a, b.basename);
+    await unforge(this.app, b, a.basename);
+    this.bumpConnection(focusPath, b.basename, true);
+    this.bumpConnection(candidatePath, a.basename, true);
+  }
+
+  /**
+   * Forge-from-ghost: create the unwritten note (empty, no cite-seeding), placed in a citing
+   * note's folder with the phantom's readable label, open it, and return its path.
+   */
+  async createGhostNote(key: string): Promise<string | null> {
+    this.ensureIndex();
+    let label = key;
+    let folder = "";
+    for (const p of this.index.notesWithFacet(key)) {
+      const rec = this.index.get(p);
+      if (rec?.facetLabels[key]) label = rec.facetLabels[key];
+      const slash = p.lastIndexOf("/");
+      if (slash > 0 && !folder) folder = p.slice(0, slash);
+      if (label !== key && folder) break;
+    }
+    const safe = label.replace(/[\\/:*?"<>|]/g, " ").trim() || "Untitled";
+    const path = (folder ? folder + "/" : "") + safe + ".md";
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) {
+      this.openNote(path);
+      return path;
+    }
+    try {
+      const f = await this.app.vault.create(path, "");
+      await this.app.workspace.getLeaf(false).openFile(f);
+      return path;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Optimistically (un)record a connection in the in-memory index record. */
+  private bumpConnection(path: string, targetBasename: string, remove = false): void {
     const rec = this.index.get(path);
     if (!rec) return;
-    if (!rec.connections.includes(targetBasename)) {
-      this.index.update({ ...rec, connections: [...rec.connections, targetBasename] });
-    }
+    const has = rec.connections.includes(targetBasename);
+    if (!remove && !has) this.index.update({ ...rec, connections: [...rec.connections, targetBasename] });
+    else if (remove && has) this.index.update({ ...rec, connections: rec.connections.filter((c) => c !== targetBasename) });
   }
 
   // ── view plumbing ──────────────────────────────────────────────────────────

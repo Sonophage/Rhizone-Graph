@@ -1149,7 +1149,7 @@
   font-family: var(--font-monospace, monospace);
   font-size: 15px;
   letter-spacing: 3px;
-  opacity: 0.6;
+  opacity: 0.9;
   pointer-events: none;
 }
 
@@ -1221,6 +1221,7 @@
 .rg-gx-links { isolation: isolate; }
 .rg-gx-link { stroke: var(--text-normal, #fff); stroke-width: 0.8; opacity: 0.1; mix-blend-mode: screen; }
 .rg-gx-link.rg-gx-glink { opacity: 0.08; } /* note → ghost: a touch fainter, but solid — joins the heat */
+.rg-rz-focused .rg-gx-link { mix-blend-mode: normal; } /* heat is an ambient thing — clean lines once focused */
 .rg-anim .rg-gx-link { transition: opacity 160ms ease, stroke 160ms ease; }
 .rg-gx-tie { stroke: var(--rg-accent); stroke-width: 1; opacity: 0.3; } /* inner-ring note → the tree facet it cites */
 .rg-anim .rg-gx-tie { transition: opacity 140ms ease, stroke-width 140ms ease; }

@@ -102,6 +102,7 @@ export class RhizoneFacetView extends ItemView {
   private _panelEl: HTMLElement | null = null; // connections panel (the kin list, on focus)
   private _dailyEl: HTMLElement | null = null; // "today's door" reading (ambient centre)
   private _drawOffset = 0; // "shuffle" rotates the ways-in
+  private _waysOpen = false; // the ways-in reading is opt-in, not the first thing you see
   private _ripeCache: { a: NoteRef; b: NoteRef; via: { key: string; label: string } }[] | null = null;
   private _path: { notes: NoteRef[]; hops: { via: { key: string; label: string }; df: number }[] } | null = null;
   private _trail: { kind: "note" | "facet"; key: string }[] = []; // the doors walked this session
@@ -223,6 +224,11 @@ export class RhizoneFacetView extends ItemView {
     this._searchEl = search;
     const wander = bezel.createSpan({ cls: "rg-gx-wander", text: "⚄ wander", attr: { role: "button", "aria-label": "Wander to a rare door" } });
     wander.onClickEvent(() => this.wander());
+    const waysBtn = bezel.createSpan({ cls: "rg-gx-wander", text: "ways in", attr: { role: "button", "aria-label": "Show ways in" } });
+    waysBtn.onClickEvent(() => {
+      this._waysOpen = !this._waysOpen;
+      this.renderWaysIn();
+    });
     const debouncedSearch = debounce((q: string) => void this.runSearch(q), 200, false);
     search.addEventListener("input", () => debouncedSearch(search.value));
     search.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -330,7 +336,7 @@ export class RhizoneFacetView extends ItemView {
         cls: ["rg-gx-note", "rg-gx-ghost"],
         attr: { "data-ghost": gh.key, transform: `translate(${p0.x} ${p0.y})` }
       });
-      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: String(this.sizeFor(sg.nodes.get(gh.key)?.df ?? 0, ghostMax)) } });
+      g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: String(this.sizeFor(sg.nodes.get(gh.key)?.df ?? 0, ghostMax) * 2) } }); // ghosts carry double weight
       g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
         trunc(displayLabel(gh.label), 28)
       );
@@ -634,7 +640,7 @@ export class RhizoneFacetView extends ItemView {
     const el = this._dailyEl;
     if (!el) return;
     el.empty();
-    if (this.cursor >= 0 || this.keystone || this._path) return void el.setAttr("aria-hidden", "true");
+    if (!this._waysOpen || this.cursor >= 0 || this.keystone || this._path) return void el.setAttr("aria-hidden", "true");
     const af = this.host.app.workspace.getActiveFile();
     const activePath = af && af.extension === "md" ? af.path : undefined;
     const bridges = this.host.bridges(6, activePath).slice(0, 3);

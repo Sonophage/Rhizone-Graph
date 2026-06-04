@@ -450,6 +450,7 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
   setAnimations(on: boolean): void {
     this._settings.animations = on;
     void this.saveData(this._settings);
+    this.refreshView(); // re-render both graphs so the motion gate flips live
   }
 
   spread(): number {
@@ -595,6 +596,10 @@ class RhizoneSettingTab extends PluginSettingTab {
   display(): void {
     this.containerEl.empty();
     new Setting(this.containerEl).setName("Rhizone").setHeading();
+    new Setting(this.containerEl)
+      .setName("Animations")
+      .setDesc("Motion in both graphs — entrance, summon, idle twinkle, the gravity-well. Turn off for a still view.")
+      .addToggle((t) => t.setValue(this.plugin.animations()).onChange((v) => this.plugin.setAnimations(v)));
     new Setting(this.containerEl)
       .setName("Hide folders from the graphs")
       .setDesc("Keep folders (templates, daily notes, attachments…) out of BOTH Reticular and Rhizone. Hidden notes also won't auto-focus Reticular.");

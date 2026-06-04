@@ -35,6 +35,8 @@ export interface RhizoneHost {
   noteLinks(): Array<[string, string]>;
   /** path → facet-community label (for cluster ordering). */
   noteClusters(): Record<string, string>;
+  /** community label → its anchor (most-cited) facet name, for constellation labels. */
+  clusterNames(): Record<string, string>;
   /** Search filename + body; returns the best candidate doors (name-match weighted over body). */
   searchNotes(query: string, limit?: number): Promise<{ path: string; basename: string }[]>;
   /** A short plain-text peek at a note's body, for the door cards. */
@@ -89,6 +91,7 @@ export class RhizoneFacetView extends ItemView {
 
   private notes: NoteRef[] = [];
   private clusters: Record<string, string> = {};
+  private _clusterNames: Record<string, string> = {}; // community label → anchor facet name
   private _ghosts: { key: string; label: string }[] = []; // phantom facets, alpha-ordered
   private _noteEls = new Map<string, SVGGElement>();
   private _ghostEls = new Map<string, SVGGElement>();
@@ -118,7 +121,7 @@ export class RhizoneFacetView extends ItemView {
 
   private _links: Array<[string, string]> = []; // cached vault link web (chords)
   private _ghostLinks: Array<[string, string]> = []; // [ghostKey, notePath] — a note that calls a phantom facet
-  private _linkEls = new Map<string, SVGLineElement[]>(); // key → its chord <line>s, for hover-brighten
+  private _linkEls = new Map<string, SVGElement[]>(); // key → its chord paths/lines, for hover-brighten
   private _tieEls = new Map<string, SVGLineElement[]>(); // tree facet key → inner-ring tie <line>s
   private _adj = new Map<string, string[]>(); // key → directly linked keys (notes + ghosts, for "show connected labels")
   private _hover: string | null = null; // note currently under the pointer (ambient)
@@ -185,6 +188,7 @@ export class RhizoneFacetView extends ItemView {
         }
       }
       this.clusters = this.order === "cluster" ? this.host.noteClusters() : {};
+      this._clusterNames = this.order === "cluster" ? this.host.clusterNames() : {};
     } catch (e) {
       root.createDiv({ cls: "rg-error" }).setText("Rhizone error:\n" + String((e as Error)?.stack ?? e));
       return;
@@ -202,7 +206,10 @@ export class RhizoneFacetView extends ItemView {
     orderBtn.onClickEvent(() => {
       this.order = this.order === "cluster" ? "alpha" : "cluster";
       orderBtn.setText(this.order === "cluster" ? "clusters" : "a–z");
-      if (this.order === "cluster" && !Object.keys(this.clusters).length) this.clusters = this.host.noteClusters();
+      if (this.order === "cluster" && !Object.keys(this.clusters).length) {
+        this.clusters = this.host.noteClusters();
+        this._clusterNames = this.host.clusterNames();
+      }
       this.layout();
     });
     const labelSlider = bezel.createEl("input", {
@@ -377,10 +384,13 @@ export class RhizoneFacetView extends ItemView {
     return (this._graph ??= this.host.facetGraph());
   }
 
-  /** Phantom facets — wikilink targets with no note behind them — alpha by label. */
+  /** Phantom facets — wikilink targets with no note behind them. Top by reach (so the edge ring
+   * doesn't become an overlapping band), then alpha for a stable ring order. */
   private ghostList(): { key: string; label: string }[] {
     return [...this.graph().nodes.values()]
       .filter((n) => n.phantom)
+      .sort((a, b) => b.df - a.df) // most-referenced unwritten doors first
+      .slice(0, 80)
       .sort((a, b) => a.label.localeCompare(b.label))
       .map((n) => ({ key: n.key, label: n.label }));
   }
@@ -1056,7 +1066,7 @@ export class RhizoneFacetView extends ItemView {
       if (!key || end - start + 1 < 4) return; // only label runs of ≥4 notes
       const ang = -Math.PI / 2 + (((start + end) / 2) / ordered.length) * Math.PI * 2;
       const r = R_OUT - 95; // tucked inside the note ring, clear of the ghost ring
-      const name = displayLabel(g.nodes.get(key)?.label ?? key).toUpperCase();
+      const name = displayLabel(this._clusterNames[key] ?? g.nodes.get(key)?.label ?? key).toUpperCase();
       grp
         .createSvg("text", { cls: ["rg-const-label"], attr: { x: C + Math.cos(ang) * r, y: C + Math.sin(ang) * r, "text-anchor": "middle" } })
         .setText(trunc(name, 20));
@@ -1187,8 +1197,16 @@ export class RhizoneFacetView extends ItemView {
       const pa = this._pos.get(a);
       const pb = this._pos.get(b);
       if (!pa || !pb) return;
+      // a chord: bow the line toward the centre so connections bundle and crossings read as density
+      const mx = (pa.x + pb.x) / 2;
+      const my = (pa.y + pb.y) / 2;
+      const cx = mx + (C - mx) * 0.65;
+      const cy = my + (C - my) * 0.65;
       const cls = ghost ? ["rg-gx-link", "rg-gx-glink"] : ["rg-gx-link"];
-      const ln = grp.createSvg("line", { cls, attr: { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y } }) as SVGLineElement;
+      const ln = grp.createSvg("path", {
+        cls,
+        attr: { d: `M${pa.x} ${pa.y}Q${cx} ${cy} ${pb.x} ${pb.y}`, fill: "none" }
+      }) as SVGElement;
       (this._linkEls.get(a) ?? this._linkEls.set(a, []).get(a)!).push(ln);
       (this._linkEls.get(b) ?? this._linkEls.set(b, []).get(b)!).push(ln);
       if (this.keystone && (active(a) || active(b))) ln.classList.add("rg-link-active");

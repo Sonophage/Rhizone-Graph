@@ -1219,7 +1219,7 @@
 /* connecting lines, laid behind the dots — the chord web reads as HEAT: faint solid threads
    that screen-blend, so where many overlap they build up into harder, brighter lines */
 .rg-gx-links { isolation: isolate; }
-.rg-gx-link { stroke: var(--text-normal, #fff); stroke-width: 0.7; opacity: 0.05; mix-blend-mode: screen; } /* a lone thread is near-invisible; only where many CROSS does it glow */
+.rg-gx-link { fill: none; stroke: var(--text-normal, #fff); stroke-width: 0.7; opacity: 0.05; mix-blend-mode: screen; } /* a lone chord is near-invisible; only where many CROSS does it glow */
 .rg-gx-link.rg-gx-glink { opacity: 0.04; } /* note → ghost: joins the heat, fainter still */
 .rg-rz-focused .rg-gx-link { mix-blend-mode: normal; } /* heat is an ambient thing — clean lines once focused */
 .rg-anim .rg-gx-link { transition: opacity 160ms ease, stroke 160ms ease; }

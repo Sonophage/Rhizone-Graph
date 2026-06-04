@@ -363,6 +363,23 @@ export default class RhizoneGraphPlugin extends Plugin implements ScopeHost, Rhi
     ).filter(([a, b]) => !this.isHidden(a) && !this.isHidden(b));
   }
 
+  /** Name each community by its most-cited (anchor) facet — stable, meaningful constellation names. */
+  clusterNames(): Record<string, string> {
+    this.ensureIndex();
+    const g = buildFacetGraph(this.index);
+    const labels = detectCommunities(g);
+    const best = new Map<string, { key: string; df: number }>();
+    for (const [fkey, comm] of labels) {
+      const node = g.nodes.get(fkey);
+      if (!node || node.phantom) continue;
+      const cur = best.get(comm);
+      if (!cur || node.df > cur.df) best.set(comm, { key: fkey, df: node.df });
+    }
+    const out: Record<string, string> = {};
+    for (const [comm, b] of best) out[comm] = g.nodes.get(b.key)?.label ?? b.key;
+    return out;
+  }
+
   /** Each note's cluster = the facet-community most represented among its facets. */
   noteClusters(): Record<string, string> {
     this.ensureIndex();

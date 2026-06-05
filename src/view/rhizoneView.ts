@@ -101,7 +101,9 @@ export class RhizoneFacetView extends ItemView {
   private _ksTitleEl: SVGElement | null = null; // the keystone's name, fixed above the ring
   private _scanTitleEl: SVGElement | null = null; // the note under the roam cursor, shown in the ring's centre
   private _searchEl: HTMLInputElement | null = null;
-  private _resultsEl: HTMLElement | null = null; // search results panel (the three candidate doors)
+  private _resultsEl: HTMLElement | null = null; // (legacy) blurred door overlay — kept hidden; results now live in the side panel
+  private _searchActive = false; // while true the centre echoes the query, side panel holds results
+  private _searchHits: { path: string; basename: string }[] = []; // current results (Enter summons the first)
   private _panelEl: HTMLElement | null = null; // connections panel (the kin list, on focus)
   private _dailyEl: HTMLElement | null = null; // "today's door" reading (ambient centre)
   private _drawOffset = 0; // "shuffle" rotates the ways-in
@@ -241,8 +243,12 @@ export class RhizoneFacetView extends ItemView {
     search.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Escape") (search.value = "", this.clearResults());
       else if (e.key === "Enter") {
-        const first = this._resultsEl?.querySelector<HTMLElement>(".rg-door-card");
-        first?.click(); // Enter opens the top door
+        const first = this._searchHits[0]; // Enter summons the top result
+        if (first) {
+          search.value = "";
+          this.clearResults();
+          this.setKeystone({ kind: "note", key: first.path });
+        }
       }
     });
     this._resultsEl = root.createDiv({ cls: "rg-gx-results", attr: { "aria-hidden": "true" } });
@@ -279,6 +285,9 @@ export class RhizoneFacetView extends ItemView {
     this._pan = pan;
     this.attachPanZoom(svg);
 
+    // ambient gravity: a soft accent glow breathing at the centre, always present
+    pan.createSvg("circle", { cls: ["rg-gx-corewell"], attr: { cx: String(C), cy: String(C), r: "90" } });
+
     // the keystone's name, pinned above the ring (fixed in the viewBox — pan/zoom don't move it)
     this._ksTitleEl = svg.createSvg("text", {
       cls: ["rg-gx-kstitle"],
@@ -304,9 +313,13 @@ export class RhizoneFacetView extends ItemView {
     }
 
     // every note becomes a persistent dot we later slide around
+    let ni = 0;
     for (const n of this.notes) {
       const p0 = oppPos.get(n.path) ?? { x: C, y: C };
       const g = pan.createSvg("g", { cls: ["rg-gx-note"], attr: { "data-path": n.path, transform: `translate(${p0.x} ${p0.y})` } });
+      g.style.setProperty("--rg-tw", `${(ni % 11) * 0.7}s`); // out-of-phase idle float
+      g.style.setProperty("--rg-fl-dur", `${10 + (ni % 7)}s`);
+      ni++;
       g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: String(this.sizeFor(this._signal.get(n.path) ?? 0)) } });
       g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
         trunc(displayLabel(n.basename), 28)
@@ -344,7 +357,10 @@ export class RhizoneFacetView extends ItemView {
         cls: ["rg-gx-note", "rg-gx-ghost"],
         attr: { "data-ghost": gh.key, transform: `translate(${p0.x} ${p0.y})` }
       });
-      g.style.setProperty("--rg-tw", `${(gi++ % 8) * 0.6}s`); // staggered idle twinkle
+      g.style.setProperty("--rg-tw", `${(gi % 8) * 0.7}s`); // staggered idle twinkle + float
+      g.style.setProperty("--rg-tw-dur", `${8 + (gi % 5)}s`);
+      g.style.setProperty("--rg-fl-dur", `${10 + (gi % 7)}s`);
+      gi++;
       g.createSvg("circle", { cls: ["rg-gx-dot"], attr: { cx: 0, cy: 0, r: String(this.sizeFor(sg.nodes.get(gh.key)?.df ?? 0, ghostMax) * 2) } }); // ghosts carry double weight
       g.createSvg("text", { cls: ["rg-gx-label"], attr: { x: 0, y: -10, "text-anchor": "middle" } }).setText(
         trunc(displayLabel(gh.label), 28)
@@ -398,23 +414,32 @@ export class RhizoneFacetView extends ItemView {
       .map((n) => ({ key: n.key, label: n.label }));
   }
 
-  // ── search: three candidate doors, each with its body peek + connections ──
+  // ── search: the query echoes in the ring's centre; the doors populate the side panel ──
   private async runSearch(query: string): Promise<void> {
     if (!query.trim()) return this.clearResults();
     const seq = ++this._searchSeq;
-    const hits = await this.host.searchNotes(query, 3);
+    this._searchActive = true;
+    this._dailyEl?.setAttr("aria-hidden", "true"); // the ways-in reading yields the side to results
+    if (this._scanTitleEl) {
+      // echo what you're typing in the centre of the ring, like the scan readout
+      this._scanTitleEl.setText(trunc(query, 32));
+      this._scanTitleEl.classList.add("is-on", "rg-gx-scan-query");
+    }
+    const hits = await this.host.searchNotes(query, 6);
     if (seq !== this._searchSeq) return; // a newer query landed first
-    const excerpts = await Promise.all(hits.map((h) => this.host.noteExcerpt(h.path, 200)));
+    const excerpts = await Promise.all(hits.map((h) => this.host.noteExcerpt(h.path, 140)));
     if (seq !== this._searchSeq) return;
-    this.renderCandidates(hits, excerpts);
+    this._searchHits = hits;
+    this.renderSearchResults(hits, excerpts);
   }
 
   private clearResults(): void {
     this._searchSeq++;
-    if (!this._resultsEl) return;
-    this._resultsEl.empty();
-    this._resultsEl.setAttr("aria-hidden", "true");
-    this.contentEl.removeClass("rg-searching");
+    this._searchActive = false;
+    this._searchHits = [];
+    this._scanTitleEl?.classList.remove("rg-gx-scan-query");
+    // restore the centre readout (cursor note / empty) and the proper side-panel state
+    this.layout();
   }
 
   /** A door's connections — its linked notes (and called ghosts), de-duped, by display name. */
@@ -432,32 +457,41 @@ export class RhizoneFacetView extends ItemView {
     svg.createSvg("circle", { cls: ["rg-door-knob"], attr: { cx: 41, cy: 55, r: 2.4 } });
   }
 
-  /** Three door cards over a blurred view: a door, the note's name, a body peek, its connections. */
-  private renderCandidates(hits: { path: string; basename: string }[], excerpts: string[]): void {
-    const host = this._resultsEl;
-    if (!host) return;
-    host.empty();
-    host.setAttr("aria-hidden", "false");
-    this.contentEl.addClass("rg-searching"); // blur the galaxy behind
+  /** Search results live in the side panel: each a door row with name, body peek, and connections. */
+  private renderSearchResults(hits: { path: string; basename: string }[], excerpts: string[]): void {
+    const p = this._panelEl;
+    if (!p) return;
+    p.empty();
+    p.setAttr("aria-hidden", "false");
+    p.addClass("rg-cx-search");
+    p.createDiv({ cls: "rg-cx-head", text: "doors" });
+    const list = p.createDiv({ cls: "rg-cx-list" });
     if (!hits.length) {
-      host.createDiv({ cls: "rg-sr-empty", text: "no doors found" });
+      list.createDiv({ cls: "rg-cx-empty", text: "no doors found" });
       return;
     }
-    const row = host.createDiv({ cls: "rg-door-row" });
     hits.forEach((h, i) => {
-      const card = row.createDiv({ cls: "rg-door-card", attr: { role: "button", "aria-label": h.basename } });
-      this.drawDoor(card);
-      card.createDiv({ cls: "rg-door-title", text: trunc(displayLabel(h.basename), 28) });
-      card.createDiv({ cls: "rg-door-snippet", text: excerpts[i] || "—" });
-      const { names, extra } = this.connectionNames(h.path);
-      const conns = card.createDiv({ cls: "rg-door-conns" });
+      const r = list.createDiv({ cls: "rg-cx-row rg-cx-door", attr: { tabindex: "0", role: "button", "aria-label": h.basename } });
+      const top = r.createDiv({ cls: "rg-door-top" });
+      this.drawDoor(top);
+      const text = top.createDiv({ cls: "rg-door-text" });
+      text.createSpan({ cls: "rg-cx-name", text: trunc(displayLabel(h.basename), 26) });
+      text.createSpan({ cls: "rg-door-snippet", text: excerpts[i] || "—" });
+      const { names, extra } = this.connectionNames(h.path, 4);
+      const conns = r.createDiv({ cls: "rg-door-conns" });
       if (!names.length) conns.createSpan({ cls: "rg-door-conn rg-door-conn-none", text: "no connections" });
       for (const nm of names) conns.createSpan({ cls: "rg-door-conn", text: nm });
       if (extra > 0) conns.createSpan({ cls: "rg-door-conn rg-door-conn-more", text: `+${extra}` });
-      card.addEventListener("click", () => {
+      const enter = (): void => {
         if (this._searchEl) this._searchEl.value = "";
         this.clearResults();
         this.setKeystone({ kind: "note", key: h.path });
+      };
+      r.addEventListener("mouseover", () => this.highlightConnections(h.path));
+      r.addEventListener("mouseout", () => this.highlightConnections(null));
+      r.addEventListener("click", enter);
+      r.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter") enter();
       });
     });
   }
@@ -487,6 +521,7 @@ export class RhizoneFacetView extends ItemView {
   private hidePanel(): void {
     if (!this._panelEl) return;
     this._panelEl.empty();
+    this._panelEl.removeClass("rg-cx-search");
     this._panelEl.setAttr("aria-hidden", "true");
   }
 
@@ -499,6 +534,7 @@ export class RhizoneFacetView extends ItemView {
     const p = this._panelEl;
     if (!p) return;
     p.empty();
+    p.removeClass("rg-cx-search");
     p.setAttr("aria-hidden", "false");
     p.createDiv({ cls: "rg-cx-head", text: `kin · ${displayLabel(ks.kind === "note" ? baseOf(ks.key) : ks.key)}` });
     const list = p.createDiv({ cls: "rg-cx-list" });
@@ -901,6 +937,7 @@ export class RhizoneFacetView extends ItemView {
   private updateScanTitle(): void {
     const el = this._scanTitleEl;
     if (!el) return;
+    if (this._searchActive) return; // the centre is echoing the search query — don't clobber it
     const ordered = this.keystone ? [] : this.orderedNotes();
     const note = this.cursor >= 0 ? ordered[this.cursor] : undefined;
     el.setText(note ? trunc(displayLabel(baseOf(note.path)), 32) : "");
@@ -1084,7 +1121,7 @@ export class RhizoneFacetView extends ItemView {
     let runStart = 0;
     for (let i = 1; i <= ordered.length; i++) {
       const prev = this.clusters[ordered[i - 1].path] ?? "";
-      const cur = i < ordered.length ? this.clusters[ordered[i].path] ?? "" : " ";
+      const cur = i < ordered.length ? this.clusters[ordered[i].path] ?? "" : "\uffff";
       if (cur !== prev) {
         emit(runStart, i - 1, prev);
         runStart = i;

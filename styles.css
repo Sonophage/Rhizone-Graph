@@ -16,6 +16,10 @@
   --rg-mentioned: var(--color-blue, #6f8fd6);      /* wikilink */
   --rg-candidate: var(--color-red, #e05a4f);       /* co-citation suggestion */
   --rg-bg: color-mix(in srgb, var(--background-primary, #0d0d0d) 90%, var(--text-normal, #ffffff)); /* lifted off pure black */
+  /* vignette: faintly-lit, accent-tinted core → near-black rim (light from a void) */
+  --rg-bg-core: color-mix(in srgb, var(--background-primary, #0c0b0a), var(--rg-accent) 7%);
+  --rg-bg-rim: var(--background-primary, #0c0b0a);
+  --rg-bg-edge: color-mix(in srgb, var(--background-primary, #0c0b0a), #000 48%);
 
   position: relative;
   background-color: var(--rg-bg);
@@ -819,6 +823,12 @@
   justify-content: center;
   overflow: hidden;
 }
+/* Rhizone sits on an OPAQUE vignette — kills any wallpaper bleed-through, makes the
+   additive chord-heat read as light from a void. (Reticular keeps its flat bg.) */
+.rhizone-facet { background: var(--rg-bg-edge); }
+.rhizone-facet .rg-tree-stage {
+  background: radial-gradient(135% 135% at 50% 44%, var(--rg-bg-core) 0%, var(--rg-bg-rim) 48%, var(--rg-bg-edge) 100%);
+}
 .rg-tree {
   width: 100%;
   height: 100%;
@@ -891,6 +901,10 @@
   text-transform: uppercase;
   opacity: 0;
   pointer-events: none;
+  paint-order: stroke; /* dark halo so the title reads over any labels behind it */
+  stroke: var(--rg-bg-edge);
+  stroke-width: 5px;
+  stroke-linejoin: round;
 }
 .rg-rz-focused .rg-gx-kstitle { opacity: 0.92; }
 .rg-anim .rg-gx-kstitle { transition: opacity 360ms ease; }
@@ -976,6 +990,21 @@
 .rg-door-conn-none { border: none; font-style: italic; }
 .rg-door-conn-more { color: var(--rg-accent); border-color: var(--rg-accent); }
 
+/* search results living inside the side panel — each row is a small door + peek + connections */
+.rg-cx-search .rg-cx-head::before { content: "⌕ "; color: var(--rg-accent); }
+.rg-cx-door { gap: 6px; padding: 10px 12px; }
+.rg-cx-door .rg-door-top { display: flex; gap: 10px; align-items: flex-start; }
+.rg-cx-door .rg-door-svg { width: 26px; height: 40px; flex: 0 0 auto; }
+.rg-cx-door:hover .rg-door-svg { transform: perspective(160px) rotateY(-24deg); } /* the door opens */
+.rg-cx-door .rg-door-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rg-cx-door .rg-door-snippet {
+  font-size: 10.5px; line-height: 1.4; color: var(--text-muted);
+  text-align: left; max-height: 2.9em; overflow: hidden;
+}
+.rg-cx-door .rg-door-conns { justify-content: flex-start; }
+/* the centre echoes the live query while you type — tinted to read as an input cue, not a note */
+.rg-gx-scan.rg-gx-scan-query { fill: var(--rg-accent); opacity: 0.92; }
+
 /* ── phase 5: motion (all gated under .rg-anim) ── */
 /* gravity spring — rare kin overshoot into the inner ring as the keystone pulls them in */
 .rg-anim .rg-gx-note.rg-related { transition: transform 560ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 360ms ease; }
@@ -1014,16 +1043,36 @@
   animation: rg-ignite 1100ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
 }
 @keyframes rg-ignite { from { transform: scale(0.3); opacity: 0.7; } to { transform: scale(22); opacity: 0; } }
-/* idle twinkle: the unwritten doors flicker faintly (ambient only, dot-only so hover still works) */
-.rg-anim:not(.rg-rz-focused) .rg-gx-ghost .rg-gx-dot {
-  animation: rg-twinkle 5s ease-in-out infinite;
+/* breathing / physics: every dot drifts in a slow organic float (independent `translate`
+   property so it composes with the state `transform` scales — no conflict). Ambient only. */
+.rg-anim:not(.rg-rz-focused) .rg-gx-dot {
+  animation: rg-float var(--rg-fl-dur, 11s) ease-in-out infinite;
   animation-delay: var(--rg-tw, 0s);
+  will-change: translate;
 }
-@keyframes rg-twinkle { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+@keyframes rg-float {
+  0%, 100% { translate: 0 0; }
+  25% { translate: 1.4px -1px; }
+  50% { translate: -0.6px 1.4px; }
+  75% { translate: -1.4px -0.4px; }
+}
+/* idle twinkle: the unwritten doors breathe faintly — gentle, slow, out of phase (not blinky).
+   Runs ALONGSIDE the float (both animations listed so neither overrides the other). */
+.rg-anim:not(.rg-rz-focused) .rg-gx-ghost .rg-gx-dot {
+  animation: rg-float var(--rg-fl-dur, 11s) ease-in-out infinite,
+             rg-ghost-twinkle var(--rg-tw-dur, 9s) ease-in-out infinite;
+  animation-delay: var(--rg-tw, 0s), var(--rg-tw, 0s);
+}
+@keyframes rg-ghost-twinkle { 0%, 100% { opacity: 0.78; } 50% { opacity: 1; } }
 /* gravity-well: a soft accent glow breathing behind the summoned tree */
 .rg-gx-well { fill: var(--rg-accent); opacity: 0.14; filter: blur(28px); pointer-events: none; }
 .rg-anim .rg-gx-well { animation: rg-breathe 4.2s ease-in-out infinite; }
 @keyframes rg-breathe { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.22; } }
+/* ambient gravity: a fainter core glow always present, breathing slowly; yields to the tree-well on focus */
+.rg-gx-corewell { fill: var(--rg-accent); opacity: 0.05; filter: blur(46px); pointer-events: none; }
+.rg-anim .rg-gx-corewell { animation: rg-corebreath 7s ease-in-out infinite; }
+.rg-rz-focused .rg-gx-corewell { opacity: 0; }
+@keyframes rg-corebreath { 0%, 100% { opacity: 0.035; } 50% { opacity: 0.09; } }
 /* forge — the kin settles/dims as it graduates out of the inner ring into a resident chord */
 .rg-anim .rg-graduating { animation: rg-graduate 420ms ease forwards; }
 @keyframes rg-graduate { 0% { opacity: 1; } 45% { opacity: 1; } 100% { opacity: 0.25; } }
@@ -1201,8 +1250,9 @@
 }
 .rg-gx-note:hover .rg-gx-label,
 .rg-gx-note.rg-related .rg-gx-label,
-.rg-gx-note.rg-near .rg-gx-label,
-.rg-gx-note.rg-linked .rg-gx-label { opacity: 1; pointer-events: auto; } /* clicking the name selects ITS node, not the dot behind the text */
+.rg-gx-note.rg-near .rg-gx-label { opacity: 1; pointer-events: auto; } /* clicking the name selects ITS node, not the dot behind the text */
+/* connected-outer notes stay LIT but only name themselves on hover — otherwise a whole
+   cluster-arc of them smears under the keystone title at the top of the ring */
 /* the scanned node's name is carried by the big centre readout — don't also print it on the
    ring (the glowing cursor dot already marks which one it is). No double "Opaline". */
 .rg-gx-note.rg-cursor .rg-gx-label { opacity: 0; }
